@@ -1,0 +1,10 @@
+{
+  "name": "Remix VibeCode Studio",
+  "description": "Plateforme de vibecoding pour débutants style Lovable.dev : créez, itérez et déployez des applications web complètes en langage naturel avec prévisualisation temps réel, inspecteur visuel et assistance IA.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
