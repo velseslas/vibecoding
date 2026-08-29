@@ -700,10 +700,25 @@ app.get("/api/security/health", (_req, res) => {
 // Prompt Enhancer API
 // ----------------------------------------------------
 app.post("/api/enhance-prompt", async (req, res) => {
+  const startTime = Date.now();
   try {
     const { prompt, vibe, category } = req.body;
+    const ai = getGeminiClient();
 
-    const systemInstruction = `Tu es un expert en Prompt Engineering pour le Vibecoding (création d'applications web sans coder pour débutants, style Lovable).
+    if (!ai) {
+      const enhanced = `Crée une application web moderne et interactive : "${prompt}". 
+Style visuel : ${vibe || "Moderne et épuré avec Tailwind CSS"}. 
+Fonctionnalités clés : interface ultra-intuitive, données dynamiques avec persistance LocalStorage, animations fluides, boutons interactifs avec retours visuels immédiats, design entièrement responsive mobile/desktop.`;
+      return res.json({ enhancedPrompt: enhanced });
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: `Tu es un expert en Prompt Engineering pour le Vibecoding (création d'applications web sans coder pour débutants, style Lovable).
+L'utilisateur débutant a écrit cette idée : "${prompt}"
+Vibe/Style souhaité : "${vibe || "Moderne et soigné"}"
+Catégorie : "${category || "Application Web"}"
+
 Transforme ce prompt débutant en un prompt de vibecoding complet, clair et ultra-précis en français qui décrit :
 1. Le but principal de l'application
 2. La structure de l'interface (Header, sections clés, cartes, modales)
@@ -711,36 +726,16 @@ Transforme ce prompt débutant en un prompt de vibecoding complet, clair et ultr
 4. Les données initiales réalistes et le stockage LocalStorage
 5. Le style visuel (Tailwind CSS, animations, palette de couleurs cohérente)
 
-Renvoie UNIQUEMENT le texte du prompt enrichi, sans préambule ni balises de code Markdown.`;
+Renvoie UNIQUEMENT le texte du prompt enrichi, sans préambule ni balises de code Markdown.`,
+    });
 
-    const userMessage = `Idée débutant : "${prompt}" | Vibe : "${vibe || "Moderne et soigné"}" | Catégorie : "${category || "Application Web"}"`;
-
-    const { result } = await providerRegistry.executeWithRouting<string>(
-      'CONVERSATION',
-      async (provider) => {
-        const resp = await provider.generateText({
-          prompt: userMessage,
-          systemInstruction,
-          temperature: 0.3,
-          maxTokens: 2048,
-        });
-        return resp.text;
-      }
-    );
-
-    if (result && result.trim()) {
-      return res.json({ enhancedPrompt: result.trim() });
-    }
-
-    const enhancedFallback = `Crée une application web moderne et interactive : "${prompt}". 
-Style visuel : ${vibe || "Moderne et épuré avec Tailwind CSS"}. 
-Fonctionnalités clés : interface ultra-intuitive, données dynamiques avec persistance LocalStorage, animations fluides, boutons interactifs avec retours visuels immédiats, design entièrement responsive mobile/desktop.`;
-    return res.json({ enhancedPrompt: enhancedFallback });
-  } catch (err: any) {
-    const enhancedFallback = `Crée une application web moderne et interactive : "${req.body.prompt || ''}". 
-Style visuel : ${req.body.vibe || "Moderne et épuré avec Tailwind CSS"}. 
-Fonctionnalités clés : interface ultra-intuitive, données dynamiques avec persistance LocalStorage.`;
-    return res.json({ enhancedPrompt: enhancedFallback });
+    const enhanced = response.text?.trim() || prompt;
+    statsTracker.recordGeneration(Date.now() - startTime, 300);
+    res.json({ enhancedPrompt: enhanced });
+  } catch (error: any) {
+    statsTracker.recordError();
+    logger.error("EnhancePrompt", "Error in enhance-prompt", error);
+    res.status(500).json({ error: error.message || "Failed to enhance prompt" });
   }
 });
 
@@ -793,7 +788,7 @@ Renvoie UNIQUEMENT un objet JSON valide suivant exactement cette structure :
           prompt: userMessage,
           systemInstruction,
           temperature: 0.2,
-          maxTokens: 8192,
+          maxTokens: 32768,
         });
         return resp.text;
       }
@@ -873,7 +868,7 @@ ${elementTarget ? `Élément ciblé spécifiquement : ${JSON.stringify(elementTa
           prompt: userMessage,
           systemInstruction,
           temperature: 0.2,
-          maxTokens: 8192,
+          maxTokens: 32768,
         });
         return resp.text;
       }
@@ -931,10 +926,20 @@ app.post("/api/stream-generate", async (req: Request, res: Response) => {
 
   try {
     const { prompt, vibe } = req.body;
+    const ai = getGeminiClient();
 
     sendEvent("step", { label: "🧠 Analyse architecturale du prompt...", status: "in-progress" });
-    sendEvent("step", { label: "🎨 Génération de la palette et du Design System...", status: "in-progress" });
 
+    if (!ai) {
+      sendEvent("step", { label: "⚡ Basculement sur le moteur local haute vitesse...", status: "completed" });
+      sendEvent("fallback", { message: "Moteur local prêt" });
+      res.end();
+      statsTracker.decrementStream();
+      return;
+    }
+
+    sendEvent("step", { label: "🎨 Génération de la palette et du Design System...", status: "in-progress" });
+    
     const systemInstruction = `Tu es le moteur d'intelligence artificielle de VibeCode Studio.
 Génère une application web complète, propre et autonome dans un seul fichier HTML complet avec Tailwind CSS, Lucide Icons, et JavaScript fonctionnel.
 Renvoie UNIQUEMENT un objet JSON valide avec :
@@ -956,24 +961,18 @@ Renvoie UNIQUEMENT un objet JSON valide avec :
 
     sendEvent("step", { label: "💻 Écriture des composants interactifs & scripts...", status: "in-progress" });
 
-    const userMessage = `Crée l'application web pour : "${prompt}". Vibe : "${vibe || "Moderne"}".`;
-
-    const { result } = await providerRegistry.executeWithRouting<string>(
-      'CODE_GENERATION',
-      async (provider) => {
-        const resp = await provider.generateText({
-          prompt: userMessage,
-          systemInstruction,
-          temperature: 0.2,
-          maxTokens: 8192,
-        });
-        return resp.text;
-      }
-    );
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: `Crée l'application web pour : "${prompt}". Vibe : "${vibe || "Moderne"}".`,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      },
+    });
 
     sendEvent("step", { label: "🚀 Assemblage et compilation de l'aperçu...", status: "completed" });
 
-    const text = (result || "") as string;
+    const text = response.text?.trim() || "";
     let data;
     try {
       data = JSON.parse(text);
@@ -1008,18 +1007,13 @@ Renvoie UNIQUEMENT un objet JSON valide avec :
 // ----------------------------------------------------
 distributedJobQueue.registerHandler("generate_app", async (job) => {
   const { prompt, vibe } = job.payload;
-  const { result } = await providerRegistry.executeWithRouting<string>(
-    'CODE_GENERATION',
-    async (provider) => {
-      const resp = await provider.generateText({
-        prompt: `Crée l'application pour: ${prompt}`,
-        temperature: 0.2,
-        maxTokens: 8192,
-      });
-      return resp.text;
-    }
-  );
-  return { text: result };
+  const ai = getGeminiClient();
+  if (!ai) return { fallback: true };
+  const response = await ai.models.generateContent({
+    model: "gemini-3.7-flash",
+    contents: `Crée l'application pour: ${prompt}`,
+  });
+  return { text: response.text };
 });
 
 // ----------------------------------------------------

@@ -34,11 +34,11 @@ export class ProviderRegistry {
     // 2. Register OxAlpha
     this.registerProvider(oxalphaProvider, {
       provider: 'oxalpha',
-      model: process.env.OXALPHA_MODEL || 'oxalpha-coder-v1',
+      model: process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash',
       enabled: true,
       priority: 2,
-      timeout: 30000,
-      maxTokens: 8192,
+      timeout: 90000,
+      maxTokens: 32768,
       temperature: 0.2,
     });
 

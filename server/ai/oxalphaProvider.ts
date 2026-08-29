@@ -12,7 +12,7 @@ export interface OxAlphaConfig {
 
 export class OxAlphaProvider implements AIProvider {
   public readonly id = 'oxalpha';
-  public readonly name = 'OxAlpha AI';
+  public readonly name = 'OxAlpha AI (GLM-5.3-Flash)';
   private defaultModel: string;
   private baseUrl: string;
   private timeoutMs: number;
@@ -20,9 +20,9 @@ export class OxAlphaProvider implements AIProvider {
   private costPer1kOutputTokens: number;
 
   constructor(config?: OxAlphaConfig) {
-    this.defaultModel = config?.defaultModel || process.env.OXALPHA_MODEL || 'oxalpha-coder-v1';
-    this.baseUrl = (config?.baseUrl || process.env.OXALPHA_BASE_URL || 'https://api.oxalpha.ai/v1').replace(/\/+$/, '');
-    this.timeoutMs = config?.timeoutMs || 15000;
+    this.defaultModel = config?.defaultModel || process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash';
+    this.baseUrl = (config?.baseUrl || process.env.OXALPHA_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+    this.timeoutMs = config?.timeoutMs || 90000;
     this.costPer1kInputTokens = config?.costPer1kInputTokens ?? 0.00012; // ~ €0.12 / 1M tokens
     this.costPer1kOutputTokens = config?.costPer1kOutputTokens ?? 0.00045; // ~ €0.45 / 1M tokens
   }
@@ -45,7 +45,7 @@ export class OxAlphaProvider implements AIProvider {
       id: this.id,
       name: this.name,
       type: 'cloud',
-      models: ['oxalpha-coder-v1', 'oxalpha-pro-1', 'oxalpha-fast-1'],
+      models: ['z-ai/glm-5.3-flash'],
       defaultModel: this.defaultModel,
       isAvailable: this.isAvailable(),
       costPer1kInputTokens: this.costPer1kInputTokens,
@@ -58,6 +58,16 @@ export class OxAlphaProvider implements AIProvider {
   public estimateCost(usage: TokenUsage): number {
     const cost = (usage.promptTokens / 1000) * this.costPer1kInputTokens + (usage.completionTokens / 1000) * this.costPer1kOutputTokens;
     return Number(cost.toFixed(6));
+  }
+
+  private getHeaders(apiKey: string): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'X-Client-Agent': 'VibeCode-OxAlphaProvider/2.0',
+      'HTTP-Referer': 'https://vibecode.studio',
+      'X-Title': 'VibeCode Studio',
+    };
   }
 
   /**
@@ -93,11 +103,7 @@ export class OxAlphaProvider implements AIProvider {
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-Client-Agent': 'VibeCode-OxAlphaProvider/1.0',
-        },
+        headers: this.getHeaders(apiKey),
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -170,11 +176,7 @@ export class OxAlphaProvider implements AIProvider {
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-Client-Agent': 'VibeCode-OxAlphaProvider/1.0',
-        },
+        headers: this.getHeaders(apiKey),
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -260,11 +262,7 @@ export class OxAlphaProvider implements AIProvider {
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-Client-Agent': 'VibeCode-OxAlphaProvider/1.0',
-        },
+        headers: this.getHeaders(apiKey),
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -353,17 +351,13 @@ export class OxAlphaProvider implements AIProvider {
     }
 
     const controller = new AbortController();
-    const timeoutMs = 6000;
+    const timeoutMs = 10000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-Client-Agent': 'VibeCode-OxAlphaProvider/1.0',
-        },
+        headers: this.getHeaders(apiKey),
         body: JSON.stringify({
           model: this.defaultModel,
           messages: [{ role: 'user', content: 'ping' }],

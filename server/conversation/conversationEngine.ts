@@ -1082,7 +1082,7 @@ export class ConversationEngine {
   }
 
   /**
-   * Resilient, feature-rich code synthesizer with context awareness and mutation safety
+   * Resilient, feature-rich code synthesizer powered by GLM-5.3-Flash / OpenRouter / Gemini
    */
   private async synthesizeCode(
     prompt: string,
@@ -1112,30 +1112,32 @@ export class ConversationEngine {
         const effectiveBlueprint = blueprint || productBlueprintService.generateBlueprint(understanding, prompt);
         const effectiveUxPlan = uxPlan || uxProductPlanner.planUX(effectiveBlueprint);
 
-        const sysInstruction = `Tu es le moteur principal d'Intelligence Artificielle et d'Architecture Logicielle de VibeCode Studio.
-Ta mission est de générer une application web complète, fonctionnelle, magnifique et de NIVEAU PRODUCTION en un seul fichier HTML autonome exécutable dans un iframe.
+        const sysInstruction = `Tu es l'architecte principal d'Intelligence Artificielle et de Développement Logiciel de VibeCode Studio.
+Ta mission est de générer une application web produit complète, fonctionnelle, magnifique et de NIVEAU PRODUCTION en un seul fichier HTML autonome exécutable dans un iframe.
 
-EXIGENCES CRITIQUES DE QUALITÉ PRODUIT :
-1. EXPÉRIENCE PRODUIT COMPLÈTE (NON-MVP) : L'application NE DOIT PAS être un squelette simplifié ou un composant isolé à 3 cartes. Pour toute demande d'application ou de clone (ex: Facebook, CRM, Marketplace, Kanban, Chantiers BTP), tu dois générer TOUTES les surfaces d'interface :
-   - Barre de navigation supérieure (Header) avec recherche, logo, onglets actifs, notifications, messagerie et profil.
-   - Disposition multi-colonnes réactive (ex: Sidebar gauche pour raccourcis/navigation, Zone centrale pour le fil/contenu principal, Sidebar droite pour contacts en ligne/widgets/statistiques).
-   - Contenus et carrousels interactifs (ex: Stories horizontales, barres de filtres).
-   - Modales contextuelles (Nouveau post, Création de tâche/client, Filtres, Détails).
-2. STYLISME & DESIGN SYSTEM TAILWIND CSS :
+EXIGENCES CRITIQUES DE QUALITÉ PRODUIT (REASONING & HIGH-CAPACITY CODE GENERATION) :
+1. ANALYSE ET CONCEPTION ARCHITECTURALE : Réfléchis attentivement à la structure globale, aux rôles des composants et au modèle de données réactif avant de générer le code HTML.
+2. EXPÉRIENCE PRODUIT COMPLÈTE (NON-MVP) : L'application NE DOIT PAS être un squelette simplifié ou un composant isolé. Pour toute demande d'application ou de clone (ex: Facebook, CRM, Marketplace, Kanban, Chantiers BTP, Dashboard), tu dois générer TOUTES les surfaces d'interface :
+   - Header complet avec logo, recherche interactive, onglets de navigation actifs, badges de notifications et menu profil.
+   - Disposition multi-colonnes réactive (ex: Navigation gauche, Fil d'actualité/Contenu principal au centre, Widgets/Statistiques à droite).
+   - Composants interactifs riches (carrousels, cartes dynamiques, formulaires de saisie, barres de filtres, recherche en direct).
+   - Modales contextuelles fonctionnelles (création d'élément, détails, filtres) contrôlées par JavaScript.
+3. STYLISME & DESIGN SYSTEM TAILWIND CSS :
    - Inclut Tailwind CSS v3 via CDN (<script src="https://cdn.tailwindcss.com"></script>).
    - Applique une typographie soignée (Plus Jakarta Sans ou Inter via Google Fonts).
-   - Couleurs harmonieuses, contrastes élevés (conforme WCAG), bordures raffinées, ombres douces et arrondis modernes (8px à 16px).
-3. ICÔNES LUCIDE :
+   - Palette de couleurs harmonieuses, contrastes élevés (WCAG), ombres douces et arrondis modernes (8px à 16px).
+4. ICÔNES LUCIDE :
    - Inclut Lucide Icons via CDN (<script src="https://unpkg.com/lucide@latest"></script>).
-   - Appelle 'lucide.createIcons()' dans le script au chargement du DOM et après chaque modification dynamique.
-4. INTERACTIVITÉ JAVASCRIPT TOTALE & GESTION D'ÉTAT :
-   - Écris du code JavaScript natif réactif avec gestionnaire d'événements sur TOUS les boutons cliquables.
-   - Implémente la logique d'état : Likes réactifs avec mise à jour optimiste des compteurs, ajout dynamique de commentaires, filtres de recherche en direct, ouvertures/fermetures de modales et tiroirs, basculement d'onglets de navigation.
-5. DONNÉES RÉALISTES & ANCRAGE DOMAINE :
-   - Interdiction formelle du texte d'attente générique ("Lorem Ipsum", "Éléments Traités 128").
-   - Utilise des données réalistes ancrées dans le domaine (noms réels, vrais avatars via Unsplash, publications engageantes, timestamps relatifs "Il y a 10 min").
-6. FORMAT DE RÉPONSE STRICT :
-   - Renvoie UNIQUEMENT le code HTML complet (commençant par <!DOCTYPE html> et finissant par </html>) ou un JSON {"html": "..."}. Aucun texte ou explication en dehors du code HTML.`;
+   - Invoque lucide.createIcons() dans le script au chargement du DOM et après chaque modification dynamique.
+5. INTERACTIVITÉ JAVASCRIPT TOTALE & GESTION D'ÉTAT LOCAL :
+   - Écris du code JavaScript natif propre et réactif pour gérer tous les boutons cliquables.
+   - Implémente la logique d'état : ajouts/suppressions dynamiques d'éléments, filtres en temps réel, basculement d'onglets, ouvertures/fermetures de modales, likes/compteurs réactifs.
+6. DONNÉES RÉALISTES & ANCRAGE DOMAINE :
+   - Interdiction formelle de texte générique d'attente ("Lorem Ipsum", "Test 123"). Utilise des données réalistes et crédibles adaptées au domaine.
+7. FORMAT DE RÉPONSE STRICT :
+   - Renvoie UNIQUEMENT le code HTML complet (du <!DOCTYPE html> à </html>) ou un JSON {"html": "..."}. Aucun texte explicatif hors du code HTML.
+
+TU DISPOSES D'UNE FENÊTRE DE SORTIE ÉTENDUE DE 32768 TOKENS. UTILISE CETTE CAPACITÉ POUR GÉNÉRER UNE APPLICATION TRÈS RICHE ET COMPLÈTE.`;
 
         let userPromptText = `DEMANDE DE L'UTILISATEUR : "${prompt}"\nSTYLE / VIBE SÉLECTIONNÉ : "${vibe}".\nINTENTION IDENTIFIÉE : ${intent}.\n`;
 
@@ -1168,19 +1170,20 @@ STRUCTURE UX ET DISPOSITION :
         }
 
         if (currentHtml && currentHtml.length > 50) {
-          userPromptText += `\nCODE HTML EXISTANT DE L'APPLICATION (À ENRICHIR) :\n\`\`\`html\n${currentHtml}\n\`\`\`\nConserve toutes les données et fonctionnalités existantes tout en intégrant la demande utilisateur.`;
+          userPromptText += `\nCODE HTML EXISTANT DE L'APPLICATION (À ENRICHIR/MODIFIER) :\n\`\`\`html\n${currentHtml}\n\`\`\`\nConserve toutes les données et fonctionnalités existantes tout en intégrant la demande utilisateur.`;
         } else {
           userPromptText += `\nGÉNÈRE UNE NOUVELLE APPLICATION PRODUIT COMPLÈTE ET ULTRA-SOIGNÉE CORRESPONDANT EXACTEMENT À CES SPÉCIFICATIONS.`;
         }
 
         const { result } = await providerRegistry.executeWithRouting(
           'CODE_GENERATION',
-          async (provider) => {
+          async (provider, providerCfg) => {
             const resp = await provider.generateText({
               prompt: userPromptText,
               systemInstruction: sysInstruction,
-              temperature: 0.2,
-              maxTokens: 8192,
+              temperature: providerCfg.temperature ?? 0.2,
+              maxTokens: providerCfg.maxTokens || 32768,
+              timeoutMs: providerCfg.timeout || 90000,
             });
             return resp.text;
           },
@@ -1205,305 +1208,12 @@ STRUCTURE UX ET DISPOSITION :
           }
         }
       } catch (err: any) {
-        logger.warn('ConversationEngine', `LLM code synthesis failed, falling back to local synthesizer: ${err.message}`);
+        logger.error('ConversationEngine', `LLM code synthesis failed: ${err.message}`);
+        throw new Error(`La génération de code a échoué via le modèle IA (${err.message}). Veuillez réessayer.`);
       }
     }
 
-    const rawLower = prompt.toLowerCase();
-    const title = prompt.length > 25 ? prompt.substring(0, 25) + '...' : prompt;
-
-    // --- SCENARIO 1: CONTACT PAGE CREATION ---
-    if (rawLower.includes('contact') && (!currentHtml || currentHtml.length < 50)) {
-      return `<!DOCTYPE html>
-<html lang="fr" class="h-full">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Contactez-nous</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="h-full bg-slate-50 text-slate-900 flex flex-col font-sans">
-  <header class="border-b border-slate-200 bg-white px-6 py-4 flex items-center justify-between shadow-sm">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
-        <i data-lucide="mail" class="w-4 h-4"></i>
-      </div>
-      <h1 class="text-lg font-bold text-slate-800">Support & Contact</h1>
-    </div>
-  </header>
-  <main class="flex-1 max-w-xl w-full mx-auto p-6 flex flex-col justify-center">
-    <div class="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-      <h2 class="text-xl font-bold text-slate-900 mb-2">Envoyez-nous un message</h2>
-      <p class="text-sm text-slate-500 mb-6">Notre équipe vous répond sous 24 heures ouvrées.</p>
-      <form id="contact-form" class="space-y-4" onsubmit="event.preventDefault(); document.getElementById('contact-success').classList.remove('hidden');">
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Nom complet</label>
-          <input type="text" id="contact-name" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Jean Dupont">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Adresse Email</label>
-          <input type="email" id="contact-email" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="jean.dupont@exemple.fr">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Votre message</label>
-          <textarea id="contact-message" rows="4" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Comment pouvons-nous vous aider ?"></textarea>
-        </div>
-        <button type="submit" id="btn-submit-contact" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow transition flex items-center justify-center gap-2">
-          <i data-lucide="send" class="w-4 h-4"></i> Envoyer le message
-        </button>
-      </form>
-      <div id="contact-success" class="hidden mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-5 h-5 text-emerald-600"></i> Message envoyé avec succès !
-      </div>
-    </div>
-  </main>
-  <script>document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });</script>
-</body>
-</html>`;
-    }
-
-    // --- SCENARIO 2: PRODUCT BLUEPRINT DRIVEN APPLICATION (For new apps or full rebuilds) ---
-    if ((!currentHtml || currentHtml.length < 50 || intent === 'CREATE_FEATURE') && blueprint && uxPlan) {
-      return productGenerator.generateProductCode(blueprint, uxPlan);
-    }
-
-    // --- INCREMENTAL PRODUCT REFINEMENT / MODIFICATION ON EXISTING CODE ---
-    let updated = currentHtml;
-    if (currentHtml && currentHtml.length > 50 && intent !== 'CREATE_FEATURE') {
-      const modRes = conversationProductModifier.modifyProduct(currentHtml, prompt, {
-        elementTarget: options?.elementTarget,
-        resolvedTargetSelector: options?.resolvedTargetSelector,
-      });
-      if (modRes.modifiedHtml && modRes.modifiedHtml !== currentHtml) {
-        updated = modRes.modifiedHtml;
-      }
-    }
-
-    // --- BASE SCAFFOLD GENERATION IF NO CODE AND NO BLUEPRINT ---
-    if (!updated || updated.length < 50) {
-      updated = `<!DOCTYPE html>
-<html lang="fr" class="h-full">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="h-full bg-slate-50 text-slate-900 flex flex-col font-sans">
-  <header id="main-header" class="border-b border-slate-200 bg-white/80 backdrop-blur px-6 py-4 flex items-center justify-between shadow-sm">
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-100">
-        <i data-lucide="layers" class="w-5 h-5"></i>
-      </div>
-      <div>
-        <h1 class="text-lg font-bold text-slate-800">${title}</h1>
-        <p class="text-xs text-slate-500">Vibe : ${vibe}</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-3">
-      <button id="btn-theme-toggle" class="px-3 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-600 transition flex items-center gap-1.5">
-        <i data-lucide="moon" class="w-3.5 h-3.5"></i> Thème
-      </button>
-      <button id="btn-create-item" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-sm transition flex items-center gap-1.5">
-        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nouvel Élément
-      </button>
-    </div>
-  </header>
-
-  <main id="app-workspace" class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div id="stats-card-1" class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-        <i data-lucide="activity" class="w-6 h-6"></i>
-      </div>
-      <div>
-        <div class="text-2xl font-bold text-slate-800" id="metric-active-count">128</div>
-        <div class="text-xs font-medium text-slate-500">Éléments Traités</div>
-      </div>
-    </div>
-
-    <div id="stats-card-2" class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-        <i data-lucide="trending-up" class="w-6 h-6"></i>
-      </div>
-      <div>
-        <div class="text-2xl font-bold text-slate-800">99.8%</div>
-        <div class="text-xs font-medium text-slate-500">Taux de Fiabilité</div>
-      </div>
-    </div>
-
-    <div id="stats-card-3" class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-        <i data-lucide="clock" class="w-6 h-6"></i>
-      </div>
-      <div>
-        <div class="text-2xl font-bold text-slate-800">12ms</div>
-        <div class="text-xs font-medium text-slate-500">Temps de Réponse</div>
-      </div>
-    </div>
-
-    <div id="main-content-section" class="md:col-span-3 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-      <h2 class="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i> Espace de Travail Interactif
-      </h2>
-      <div id="items-list-container" class="space-y-3">
-        <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-100/80 transition">
-          <div class="flex items-center gap-3">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <span class="text-sm font-medium text-slate-700">Initialisation terminée avec succès</span>
-          </div>
-          <span class="text-xs text-slate-400 font-mono">Prêt</span>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (window.lucide) lucide.createIcons();
-    });
-  </script>
-</body>
-</html>`;
-    }
-
-    // --- MUTATIONS & ENRICHMENTS ---
-    // Mutation A: Product catalog creation
-    if (rawLower.includes('produit') && !updated.includes('id="product-catalog"')) {
-      const productCatalogHtml = `
-    <div id="product-catalog" class="md:col-span-3 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-          <i data-lucide="shopping-bag" class="w-4 h-4 text-indigo-600"></i> Catalogue Produits
-        </h2>
-        <span class="text-xs text-slate-400">3 articles disponibles</span>
-      </div>
-      <div id="products-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="product-card border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between" data-category="tech">
-          <div>
-            <div class="font-semibold text-slate-800 text-sm">Clavier Ergonomique</div>
-            <div class="text-xs text-slate-500 mt-1">Confort de frappe prolongée</div>
-          </div>
-          <div class="flex items-center justify-between mt-4">
-            <span class="font-bold text-indigo-600 text-sm">89 €</span>
-            <button class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-medium">Acheter</button>
-          </div>
-        </div>
-        <div class="product-card border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between" data-category="audio">
-          <div>
-            <div class="font-semibold text-slate-800 text-sm">Casque Audio ANC</div>
-            <div class="text-xs text-slate-500 mt-1">Réduction de bruit active</div>
-          </div>
-          <div class="flex items-center justify-between mt-4">
-            <span class="font-bold text-indigo-600 text-sm">199 €</span>
-            <button class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-medium">Acheter</button>
-          </div>
-        </div>
-        <div class="product-card border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between" data-category="tech">
-          <div>
-            <div class="font-semibold text-slate-800 text-sm">Souris Sans Fil</div>
-            <div class="text-xs text-slate-500 mt-1">Capteur haute précision</div>
-          </div>
-          <div class="flex items-center justify-between mt-4">
-            <span class="font-bold text-indigo-600 text-sm">49 €</span>
-            <button class="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-medium">Acheter</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-      if (updated.includes('</main>')) {
-        updated = updated.replace('</main>', `${productCatalogHtml}\n  </main>`);
-      } else {
-        updated += productCatalogHtml;
-      }
-    }
-
-    // Mutation B: Adding filter bar
-    if (rawLower.includes('filtre') && !updated.includes('id="product-filter-bar"')) {
-      const filterBarHtml = `
-      <div id="product-filter-bar" class="flex items-center gap-3 mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
-        <div class="flex-1 relative">
-          <input type="text" id="filter-input-search" placeholder="Rechercher un produit..." class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
-        </div>
-        <select id="filter-select-sort" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-600">
-          <option value="all">Tous les prix</option>
-          <option value="asc">Prix croissant</option>
-          <option value="desc">Prix décroissant</option>
-        </select>
-      </div>`;
-
-      if (updated.includes('id="products-grid"')) {
-        updated = updated.replace('<div id="products-grid"', `${filterBarHtml}\n      <div id="products-grid"`);
-      } else if (updated.includes('id="main-content-section"')) {
-        updated = updated.replace('id="main-content-section"', `id="main-content-section">\n${filterBarHtml}`);
-      }
-    }
-
-    // Mutation C: Adding category pills
-    if ((rawLower.includes('catégorie') || rawLower.includes('categorie')) && !updated.includes('id="category-pills"')) {
-      const categoryPillsHtml = `
-        <div id="category-pills" class="flex items-center gap-2 mb-4">
-          <button class="category-btn active px-2.5 py-1 bg-indigo-600 text-white rounded-full text-xs font-medium" data-cat="all">Tous</button>
-          <button class="category-btn px-2.5 py-1 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-full text-xs font-medium" data-cat="tech">Tech</button>
-          <button class="category-btn px-2.5 py-1 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-full text-xs font-medium" data-cat="audio">Audio</button>
-        </div>`;
-
-      if (updated.includes('id="products-grid"')) {
-        updated = updated.replace('<div id="products-grid"', `${categoryPillsHtml}\n      <div id="products-grid"`);
-      } else if (updated.includes('id="product-filter-bar"')) {
-        updated = updated.replace('id="product-filter-bar"', `id="product-filter-bar">\n${categoryPillsHtml}`);
-      } else if (updated.includes('id="main-content-section"')) {
-        updated = updated.replace('id="main-content-section"', `id="main-content-section">\n${categoryPillsHtml}`);
-      }
-    }
-
-    // Mutation D: Pronoun / Button resizing ("Fais-le plus petit")
-    if (rawLower.includes('plus petit') || rawLower.includes('petit')) {
-      updated = updated.replace(/px-4 py-2/g, 'px-2.5 py-1 text-xs');
-      updated = updated.replace(/px-5 py-2.5/g, 'px-3 py-1 text-xs');
-    }
-
-    // Mutation E: Deleting sidebar while keeping features accessible in header
-    if (rawLower.includes('supprime') && rawLower.includes('sidebar') && (rawLower.includes('garde') || rawLower.includes('conserve') || rawLower.includes('fonctionnalit'))) {
-      if (updated.includes('id="app-sidebar"')) {
-        updated = updated.replace(/<aside id="app-sidebar"[\s\S]*?<\/aside>/i, '');
-        if (updated.includes('id="main-header"')) {
-          updated = updated.replace(
-            'id="main-header"',
-            'id="main-header" data-sidebar-migrated="true"'
-          );
-        }
-      }
-    }
-
-    // Mutation F: Scoped modification ("Modifie uniquement la liste, pas le formulaire")
-    if (rawLower.includes('uniquement la liste') || (rawLower.includes('liste') && rawLower.includes('pas le formulaire'))) {
-      if (updated.includes('id="items-list-container"')) {
-        updated = updated.replace(
-          'id="items-list-container"',
-          'id="items-list-container" data-scoped-updated="true"'
-        );
-      }
-    }
-
-    // Mutation G: Adding generic action button
-    if (rawLower.includes('bouton') && !updated.includes('id="btn-action-added"')) {
-      updated = updated.replace(
-        '</body>',
-        `  <div class="fixed bottom-6 right-6"><button id="btn-action-added" onclick="alert('Action exécutée')" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-lg transition-all flex items-center gap-2 text-xs"><i data-lucide="sparkles" class="w-4 h-4"></i> Action Rapide</button></div>\n</body>`
-      );
-    }
-
-    // Mutation H: Color changes
-    if (rawLower.includes('rouge') || rawLower.includes('red')) {
-      updated = updated.replace(/bg-indigo-600/g, 'bg-rose-600');
-      updated = updated.replace(/text-indigo-600/g, 'text-rose-600');
-    }
-
-    return updated;
+    throw new Error('Aucun fournisseur IA disponible (OXALPHA_API_KEY ou GEMINI_API_KEY requis).');
   }
 }
 
