@@ -54,11 +54,11 @@ async function runRealProductEvaluation() {
       log(`\n--- 1. INTENT & ARCHETYPE ---`);
       log(`Archetype: ${res.productUnderstanding?.archetype}`);
       log(`Title: ${res.productBlueprint?.title}`);
-      log(`Summary: ${res.productUnderstanding?.primaryPurpose}`);
+      log(`Summary: ${res.productUnderstanding?.productGoal || ''}`);
 
       log(`\n--- 2. PRODUCT BLUEPRINT & UX PLAN ---`);
       log(`Blueprint Screens: ${JSON.stringify(res.productBlueprint?.screens?.map(s => s.title))}`);
-      log(`Key Features: ${JSON.stringify(res.productBlueprint?.keyFeatures)}`);
+      log(`Key Features: ${JSON.stringify(res.productBlueprint?.features)}`);
 
       log(`\n--- 3. PROVIDER & MODEL METRICS ---`);
       log(`Provider Used: ${res.orchestrationMetrics?.providerUsed}`);
@@ -66,7 +66,7 @@ async function runRealProductEvaluation() {
       log(`Duration: ${duration} ms`);
 
       log(`\n--- 4. GENERATION SOURCE ---`);
-      log(`Source: ${res.orchestrationMetrics?.fallbackTriggered ? 'Fallback/Local Synthesizer' : 'Real LLM'}`);
+      log(`Source: ${res.orchestrationMetrics?.fellBack ? 'Fallback/Local Synthesizer' : 'Real LLM'}`);
 
       log(`\n--- 5. HTML PREVIEW ANALYSIS ---`);
       log(`HTML Length: ${html.length} chars`);

@@ -24,7 +24,12 @@ import {
   ExternalLink,
   ShieldCheck,
   CreditCard,
-  Laptop
+  Laptop,
+  RefreshCw,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { DeviceMode, WorkspaceTab, VibeProject } from '../types';
 import { playSound } from '../utils/audio';
@@ -48,6 +53,11 @@ interface HeaderProps {
   canUndo: boolean;
   canRedo: boolean;
   onReloadPreview: () => void;
+  onOpenNewTab: () => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
   onUpdateTitle: (title: string) => void;
 }
 
@@ -70,6 +80,11 @@ export const Header: React.FC<HeaderProps> = ({
   canUndo,
   canRedo,
   onReloadPreview,
+  onOpenNewTab,
+  isExpanded,
+  onToggleExpand,
+  isCollapsed,
+  onToggleCollapse,
   onUpdateTitle,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -122,24 +137,53 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 bg-slate-950/90 backdrop-blur-xl px-4 flex items-center justify-between select-none z-30 shrink-0 border-b border-slate-800/40">
-      {/* Left: Brand + Project Title */}
+    <header className="h-14 bg-slate-950 px-4 flex items-center justify-between select-none z-30 shrink-0 shadow-sm">
+      {/* Left: Project Title */}
       <div className="flex items-center space-x-3">
-        <button
-          onClick={() => {
-            playSound('click');
-            onOpenProjects();
-          }}
-          className="flex items-center space-x-2.5 p-1 rounded-2xl hover:bg-slate-900/60 transition group text-left"
-          title="Mes projets"
-        >
-          <div className="w-8 h-8 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-600/20 group-hover:scale-105 transition-transform duration-200">
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={() => {
+              playSound('click');
+              onOpenProjects();
+            }}
+            className="w-8 h-8 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-600/20 hover:scale-105 transition-transform duration-200 shrink-0"
+            title="Mes projets"
+          >
             <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-sm tracking-tight text-white hidden sm:inline">
-            Vibe<span className="text-violet-400 font-normal">Code</span>
-          </span>
-        </button>
+          </button>
+
+          {/* Project Title displaying directly instead of VibeCode */}
+          {project && (
+            <div className="flex items-center space-x-2">
+              {isEditingTitle ? (
+                <form onSubmit={handleTitleSubmit} className="flex items-center">
+                  <input
+                    type="text"
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    onBlur={() => {
+                      if (titleInput.trim()) onUpdateTitle(titleInput.trim());
+                      setIsEditingTitle(false);
+                    }}
+                    autoFocus
+                    className="bg-slate-900 text-sm font-bold text-white px-2.5 py-1 rounded-xl outline-none ring-1 ring-violet-500 max-w-[180px] sm:max-w-[300px]"
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => {
+                    setTitleInput(project.title);
+                    setIsEditingTitle(true);
+                  }}
+                  className="font-bold text-sm tracking-tight text-white hover:text-violet-300 transition max-w-[180px] sm:max-w-[280px] truncate text-left"
+                  title="Cliquer pour renommer le projet"
+                >
+                  {project.title}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Project Selector pill */}
         <button
@@ -154,47 +198,35 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden md:inline">Projets</span>
           <ChevronDown className="w-3 h-3 text-slate-500" />
         </button>
-
-        {/* Project Title with inline edit */}
-        {project && (
-          <div className="flex items-center space-x-2 pl-1">
-            {isEditingTitle ? (
-              <form onSubmit={handleTitleSubmit} className="flex items-center">
-                <input
-                  type="text"
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  onBlur={() => {
-                    if (titleInput.trim()) onUpdateTitle(titleInput.trim());
-                    setIsEditingTitle(false);
-                  }}
-                  autoFocus
-                  className="bg-slate-900 text-xs text-white px-2.5 py-1 rounded-xl outline-none ring-1 ring-violet-500 max-w-[160px]"
-                />
-              </form>
-            ) : (
-              <button
-                onClick={() => {
-                  setTitleInput(project.title);
-                  setIsEditingTitle(true);
-                }}
-                className="text-xs font-medium text-slate-300 hover:text-white px-2.5 py-1 rounded-xl hover:bg-slate-900/60 transition max-w-[130px] sm:max-w-[200px] truncate"
-                title="Cliquer pour renommer"
-              >
-                {project.title}
-              </button>
-            )}
-
-            <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded-full bg-violet-950/40 text-[10px] font-medium text-violet-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mr-1.5" />
-              {project.vibe}
-            </span>
-          </div>
-        )}
       </div>
 
-      {/* Center: Simplified Tab Switcher & Dropdown Mode for small screens */}
+      {/* Center: Expand/Collapse & Simplified Tab Switcher */}
       <div className="flex items-center space-x-2">
+        {/* Expand / Collapse Panel Buttons placed to the left of Aperçu */}
+        <div className="flex items-center bg-slate-900/70 p-1 rounded-2xl">
+          <button
+            onClick={() => {
+              playSound('click');
+              onToggleExpand();
+            }}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title={isExpanded ? 'Réduire le panneau' : 'Agrandir le panneau'}
+          >
+            {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+
+          <button
+            onClick={() => {
+              playSound('click');
+              onToggleCollapse();
+            }}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title={isCollapsed ? 'Afficher le panneau' : 'Masquer le panneau'}
+          >
+            {isCollapsed ? <PanelLeftOpen className="w-3.5 h-3.5" /> : <PanelLeftClose className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
         {/* Main 2 Tabs: Aperçu / Code */}
         <div className="flex items-center bg-slate-900/70 p-1 rounded-2xl">
           <button
@@ -246,7 +278,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {isViewMenuOpen && (
-              <div className="absolute top-full mt-2 left-0 w-48 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-1.5 z-50 border border-slate-800/80 animate-fadeIn">
+              <div className="absolute top-full mt-2 left-0 w-48 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-1.5 z-50 shadow-black/60 animate-fadeIn">
                 <button
                   onClick={() => {
                     playSound('click');
@@ -293,51 +325,55 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Responsive Device Modes in clean rounded pill */}
+        {/* Responsive Device Mode Single Cycle Button */}
         {activeTab === 'preview' && (
           <div className="hidden lg:flex items-center bg-slate-900/70 p-1 rounded-2xl">
             <button
               onClick={() => {
                 playSound('click');
-                setDeviceMode('desktop');
+                if (deviceMode === 'desktop') setDeviceMode('tablet');
+                else if (deviceMode === 'tablet') setDeviceMode('mobile');
+                else setDeviceMode('desktop');
               }}
-              className={`p-1.5 rounded-xl transition ${
-                deviceMode === 'desktop' ? 'bg-slate-800 text-violet-400' : 'text-slate-500 hover:text-slate-300'
-              }`}
-              title="Bureau"
+              className="px-2.5 py-1.5 rounded-xl transition flex items-center space-x-1.5 bg-slate-800 text-slate-200 hover:text-white text-xs font-medium shadow-sm hover:bg-slate-700/80"
+              title={`Vue actuelle : ${deviceMode === 'desktop' ? 'Bureau' : deviceMode === 'tablet' ? 'Tablette' : 'Mobile'} (Cliquer pour basculer)`}
             >
-              <Monitor className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                playSound('click');
-                setDeviceMode('tablet');
-              }}
-              className={`p-1.5 rounded-xl transition ${
-                deviceMode === 'tablet' ? 'bg-slate-800 text-violet-400' : 'text-slate-500 hover:text-slate-300'
-              }`}
-              title="Tablette"
-            >
-              <Tablet className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                playSound('click');
-                setDeviceMode('mobile');
-              }}
-              className={`p-1.5 rounded-xl transition ${
-                deviceMode === 'mobile' ? 'bg-slate-800 text-violet-400' : 'text-slate-500 hover:text-slate-300'
-              }`}
-              title="Mobile"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
+              {deviceMode === 'desktop' && <Monitor className="w-3.5 h-3.5 text-violet-400" />}
+              {deviceMode === 'tablet' && <Tablet className="w-3.5 h-3.5 text-indigo-400" />}
+              {deviceMode === 'mobile' && <Smartphone className="w-3.5 h-3.5 text-emerald-400" />}
+              <span className="capitalize">{deviceMode === 'desktop' ? 'Bureau' : deviceMode === 'tablet' ? 'Tablette' : 'Mobile'}</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Right: Consolidated Dropdown Menu & Primary Deploy Button */}
+      {/* Right: Workspace Action Buttons */}
       <div className="flex items-center space-x-2">
+        {/* Workspace Control Buttons: Refresh, Open New Tab */}
+        <div className="flex items-center space-x-1 bg-slate-900/70 p-1 rounded-2xl">
+          <button
+            onClick={() => {
+              playSound('click');
+              onReloadPreview();
+            }}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title="Actualiser l'aperçu"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={() => {
+              playSound('click');
+              onOpenNewTab();
+            }}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title="Ouvrir dans un nouvel onglet"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
         {/* Undo/Redo compact pill */}
         <div className="hidden sm:flex items-center bg-slate-900/60 p-1 rounded-2xl">
           <button
@@ -382,7 +418,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {isActionsMenuOpen && (
-            <div className="absolute top-full mt-2 right-0 w-56 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-1.5 z-50 border border-slate-800/80 animate-fadeIn">
+            <div className="absolute top-full mt-2 right-0 w-56 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-1.5 z-50 shadow-black/60 animate-fadeIn">
               <button
                 onClick={() => {
                   playSound('click');
@@ -474,7 +510,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {isUserMenuOpen && (
-            <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 z-50 border border-slate-800/80 animate-fadeIn select-none">
+            <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 z-50 shadow-black/60 animate-fadeIn select-none">
               {/* User summary card */}
               <div className="p-3 bg-slate-950/60 rounded-xl mb-1.5 flex items-center space-x-3">
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow">

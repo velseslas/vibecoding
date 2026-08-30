@@ -29,14 +29,14 @@ export const ComponentTree: React.FC<ComponentTreeProps> = ({
           {components.map((comp, idx) => (
             <div
               key={idx}
-              className="bg-slate-900/90 border border-slate-800 hover:border-violet-600/50 p-5 rounded-2xl transition group flex flex-col justify-between"
+              className="bg-slate-900/80 hover:bg-slate-900 p-5 rounded-2xl transition group flex flex-col justify-between shadow-lg"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-sm text-white group-hover:text-violet-300 transition">
                     {comp.name}
                   </span>
-                  <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-400 font-mono">
+                  <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded text-slate-400 font-mono shadow-inner">
                     #{idx + 1}
                   </span>
                 </div>

@@ -29,7 +29,7 @@ export class GeminiProvider implements AIProvider {
       id: this.id,
       name: this.name,
       type: 'cloud',
-      models: ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+      models: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
       defaultModel: this.defaultModel,
       isAvailable: this.isAvailable(),
       costPer1kInputTokens: 0.00015,
@@ -49,7 +49,7 @@ export class GeminiProvider implements AIProvider {
     action: (modelName: string) => Promise<T>
   ): Promise<{ result: T; usedModel: string }> {
     const primaryModel = requestedModel || this.defaultModel;
-    const fallbackModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-1.5-flash'].filter((m) => m !== primaryModel);
+    const fallbackModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'].filter((m) => m !== primaryModel);
     const candidateModels = [primaryModel, ...fallbackModels];
 
     let lastError: any = null;
@@ -68,8 +68,16 @@ export class GeminiProvider implements AIProvider {
             msg.includes('Quota exceeded') ||
             msg.includes('rate-limits');
 
+          const isNotFound =
+            msg.includes('404') ||
+            msg.includes('NOT_FOUND') ||
+            msg.includes('no longer available') ||
+            msg.includes('is no longer available') ||
+            msg.includes('is not found');
+
           const isTransient =
             isQuotaError ||
+            isNotFound ||
             msg.includes('503') ||
             msg.includes('UNAVAILABLE') ||
             msg.includes('high demand') ||
@@ -78,9 +86,9 @@ export class GeminiProvider implements AIProvider {
             msg.includes('fetch failed') ||
             msg.includes('ETIMEDOUT');
 
-          if (isQuotaError && model !== candidateModels[candidateModels.length - 1]) {
-            logger.warn('GeminiProvider', `Model [${model}] quota/rate-limit reached. Switching immediately to fallback model...`);
-            break; // Skip attempt 2 for this model, move to next model immediately
+          if ((isQuotaError || isNotFound) && model !== candidateModels[candidateModels.length - 1]) {
+            logger.warn('GeminiProvider', `Model [${model}] ${isNotFound ? 'no longer available (404)' : 'quota/rate-limit reached'}. Switching immediately to fallback model...`);
+            break; // Skip attempt 2 for this model, move to next candidate model immediately
           }
 
           if (isTransient && attempt < 2) {

@@ -26,7 +26,7 @@ export class ProviderRegistry {
       model: 'gemini-3.7-flash',
       enabled: true,
       priority: 1,
-      timeout: 45000,
+      timeout: 90000,
       maxTokens: 8192,
       temperature: 0.2,
     });
@@ -106,7 +106,7 @@ export class ProviderRegistry {
       const pref = this.providers.get(preferredId)!;
       const prefCfg = this.configs.get(preferredId);
 
-      if (prefCfg?.enabled) {
+      if (prefCfg?.enabled && pref.isAvailable() && aiCircuitRegistry.getBreaker(pref.id).canExecute()) {
         const otherAvailable = allProviders.find(
           (p) => p.id !== preferredId && this.configs.get(p.id)?.enabled && p.isAvailable() && aiCircuitRegistry.getBreaker(p.id).canExecute()
         ) || localSynthesizerProvider;
@@ -148,6 +148,8 @@ export class ProviderRegistry {
     const primaryCfg = this.configs.get(primary.id)!;
     const fallbackCfg = this.configs.get(fallback.id)!;
 
+    logger.info('ProviderRegistry', `Génération démarrée via [${primary.id}] (Modèle: ${primaryCfg.model})`);
+
     try {
       const res = await aiCircuitRegistry.executeWithFallback(
         primary.id,
@@ -157,11 +159,14 @@ export class ProviderRegistry {
         { estimatedTokens: options?.estimatedTokens }
       );
 
+      const durationMs = Date.now() - start;
+      logger.info('ProviderRegistry', `Génération réussie via [${res.usedProvider}] en ${durationMs}ms${res.fellBack ? ' (fallback utilisé)' : ''}`);
+
       return {
         result: res.result,
         usedProvider: res.usedProvider,
         fellBack: res.fellBack,
-        durationMs: Date.now() - start,
+        durationMs,
       };
     } catch (err: any) {
       logger.warn('ProviderRegistry', `Primary [${primary.id}] & fallback [${fallback.id}] failed: ${err.message}. Routing to local engine safety net.`);

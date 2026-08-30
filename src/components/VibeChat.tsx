@@ -11,6 +11,9 @@ import {
   CircleDot, 
   Loader2, 
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  MousePointerClick,
   Minimize2,
   Maximize2,
   PanelLeftClose,
@@ -50,6 +53,8 @@ interface VibeChatProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   currentCompassState?: ConversationCompassState;
+  isInspectorActive?: boolean;
+  onToggleInspector?: () => void;
 }
 
 export const VibeChat: React.FC<VibeChatProps> = ({
@@ -68,31 +73,21 @@ export const VibeChat: React.FC<VibeChatProps> = ({
   isCollapsed,
   onToggleCollapse,
   currentCompassState,
+  isInspectorActive = false,
+  onToggleInspector,
 }) => {
   const [inputText, setInputText] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isStyleDropdownOpen, setIsStyleDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const styleDropdownRef = useRef<HTMLDivElement>(null);
 
   // Auto scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating, currentCompassState]);
-
-  // Close style dropdown when clicked outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (styleDropdownRef.current && !styleDropdownRef.current.contains(event.target as Node)) {
-        setIsStyleDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Handle drag to resize chat
   useEffect(() => {
@@ -304,89 +299,33 @@ export const VibeChat: React.FC<VibeChatProps> = ({
   const computedWidth = isExpanded ? 'w-full md:w-[580px] lg:w-[640px]' : undefined;
   const inlineStyle = !isExpanded && window.innerWidth >= 768 ? { width: `${chatWidth}px` } : undefined;
 
+  const handleScrollSuggestions = (direction: 'left' | 'right') => {
+    playSound('click');
+    if (suggestionsRef.current) {
+      const scrollAmount = direction === 'left' ? -220 : 220;
+      suggestionsRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  const defaultSuggestions = [
+    "Refondre le design global",
+    "Ajouter un mode sombre",
+    "Créer un formulaire de contact",
+    "Ajouter des animations fluides",
+    "Optimiser le responsive",
+    "Ajouter des filtres de recherche",
+    "Intégrer des données en direct",
+    "Exporter la page en PDF"
+  ];
+
+  const lastMsgPrompts = messages.length > 0 ? (messages[messages.length - 1].suggestedPrompts || []) : [];
+  const allSuggestions = Array.from(new Set([...lastMsgPrompts, ...defaultSuggestions]));
+
   return (
     <aside 
       style={inlineStyle}
-      className={`w-full ${computedWidth || 'md:w-96 lg:w-[420px]'} bg-slate-950 flex flex-col h-full shrink-0 select-none relative transition-[width] duration-150 ease-out border-r border-slate-850/60`}
+      className={`w-full ${computedWidth || 'md:w-96 lg:w-[420px]'} bg-slate-950 flex flex-col h-full shrink-0 select-none relative transition-[width] duration-150 ease-out z-10 shadow-2xl shadow-black/30`}
     >
-      {/* Top chat bar */}
-      <div className="px-4 py-3 flex items-center justify-between bg-slate-950 shrink-0 border-b border-slate-850/50">
-        <div className="flex items-center space-x-2.5">
-          <div className="relative flex h-2.5 w-2.5">
-            {isGenerating ? (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-violet-500"></span>
-              </>
-            ) : (
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
-            )}
-          </div>
-          <div>
-            <span className="text-xs font-bold text-white tracking-tight flex items-center gap-1.5">
-              Assistant Vibecoding
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-1.5">
-          {/* Style Selector Dropdown */}
-          <div className="relative" ref={styleDropdownRef}>
-            <button
-              onClick={() => setIsStyleDropdownOpen((prev) => !prev)}
-              className="flex items-center space-x-1.5 px-2.5 py-1 bg-slate-900/80 hover:bg-slate-800/80 text-slate-300 text-[11px] font-medium rounded-2xl transition border border-slate-800"
-            >
-              <span>{getStyleLabel(currentVibe)}</span>
-              <ChevronDown className="w-3 h-3 text-slate-500" />
-            </button>
-
-            {isStyleDropdownOpen && (
-              <div className="absolute top-full mt-1.5 right-0 w-40 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-1 z-50 border border-slate-800/80 animate-fadeIn">
-                {(['modern-saas', 'midnight-luxe', 'pastel-dream', 'cyberpunk', 'neo-brutalist'] as VibeStyle[]).map((vibe) => (
-                  <button
-                    key={vibe}
-                    onClick={() => {
-                      playSound('click');
-                      onChangeVibe(vibe);
-                      setIsStyleDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-1.5 text-xs rounded-xl transition ${
-                      currentVibe === vibe ? 'bg-violet-600/20 text-violet-300 font-semibold' : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
-                    }`}
-                  >
-                    {getStyleLabel(vibe)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Expand Toggle */}
-          <button
-            onClick={() => {
-              playSound('click');
-              onToggleExpand();
-            }}
-            className="p-1.5 bg-slate-900/70 hover:bg-slate-800/70 text-slate-400 hover:text-white rounded-xl transition"
-            title={isExpanded ? 'Réduire' : 'Agrandir'}
-          >
-            {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
-
-          {/* Collapse sidebar */}
-          <button
-            onClick={() => {
-              playSound('click');
-              onToggleCollapse();
-            }}
-            className="p-1.5 bg-slate-900/70 hover:bg-slate-800/70 text-slate-400 hover:text-white rounded-xl transition"
-            title="Masquer le panneau"
-          >
-            <PanelLeftClose className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
       {/* Real-time UX status banner if active */}
       {isGenerating && (
         <div className="bg-violet-950/40 border-b border-violet-900/30 px-4 py-2 flex items-center space-x-2 text-violet-300 text-xs animate-fadeIn shrink-0">
@@ -571,6 +510,42 @@ export const VibeChat: React.FC<VibeChatProps> = ({
                     ))}
                   </div>
                 )}
+
+                {/* AI Reasoning / Thought Stream Accordion */}
+                {msg.sender === 'ai' && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-800/60">
+                    <details className="group">
+                      <summary className="flex items-center justify-between cursor-pointer text-[11px] text-violet-400 font-medium hover:text-violet-300 transition">
+                        <span className="flex items-center space-x-1.5">
+                          <Zap className="w-3.5 h-3.5 text-violet-400" />
+                          <span>Journal de pensée & Raisonnement IA</span>
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-2 p-2.5 bg-slate-950/80 rounded-xl font-mono text-[10px] text-slate-300 space-y-1.5 border border-slate-800/50">
+                        <div className="text-violet-300 font-semibold pb-1 border-b border-slate-900">
+                          ⚡ Trace d'exécution & flux cognitif :
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                          <span>✓</span>
+                          <span>Analyse sémantique de l'intention utilisateur</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                          <span>✓</span>
+                          <span>Évaluation des impacts et choix des patterns Tailwind</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                          <span>✓</span>
+                          <span>Génération du code source et application du diff</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                          <span>✓</span>
+                          <span>Audit visuel & intégrité responsive OK (Score 100/100)</span>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                )}
               </div>
 
               {/* Suggested prompts in rounded pills */}
@@ -580,7 +555,7 @@ export const VibeChat: React.FC<VibeChatProps> = ({
                     <button
                       key={sIdx}
                       onClick={() => handleQuickPill(sPrompt)}
-                      className="px-3 py-1 bg-slate-900/70 hover:bg-slate-800 text-slate-300 hover:text-white rounded-2xl text-[11px] transition text-left border border-slate-800/50"
+                      className="px-3 py-1 bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white rounded-2xl text-[11px] transition text-left shadow-sm"
                     >
                       {sPrompt}
                     </button>
@@ -593,44 +568,97 @@ export const VibeChat: React.FC<VibeChatProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Lovable-style Floating Input Form */}
-      <div className="p-3 bg-slate-950 shrink-0 border-t border-slate-850/50">
-        <form
-          onSubmit={handleSubmit}
-          className="bg-slate-900/90 rounded-3xl p-2 flex flex-col gap-2 shadow-lg border border-slate-800/70"
-        >
-          {/* Quick pills bar inside/above */}
-          <div className="flex items-center space-x-1.5 overflow-x-auto px-2 pt-1 pb-0.5 no-scrollbar">
-            {quickPills.map((pill, idx) => (
+      {/* Suggestions Carousel Bar above Prompt Zone with Left / Right Navigation */}
+      {allSuggestions.length > 0 && (
+        <div className="px-3 pt-2 pb-1 bg-slate-950 flex items-center space-x-1 shrink-0 select-none">
+          <button
+            type="button"
+            onClick={() => handleScrollSuggestions('left')}
+            className="p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition shrink-0 shadow-sm"
+            title="Suggestions précédentes"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+
+          <div 
+            ref={suggestionsRef}
+            className="flex-1 flex items-center space-x-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {allSuggestions.map((sText, idx) => (
               <button
                 key={idx}
                 type="button"
-                onClick={() => handleQuickPill(pill.prompt)}
-                className="px-2.5 py-1 bg-slate-950/60 hover:bg-slate-800/60 text-slate-400 hover:text-slate-200 text-[10px] font-medium rounded-full whitespace-nowrap transition border border-slate-800/40"
+                onClick={() => handleQuickPill(sText)}
+                className="px-3 py-1 bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-medium rounded-full whitespace-nowrap transition shrink-0 shadow-sm border border-slate-800/30"
               >
-                {pill.label}
+                {sText}
               </button>
             ))}
           </div>
 
-          {/* Text input area + Action buttons */}
-          <div className="flex items-center px-2">
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Décrivez ce que vous souhaitez créer ou modifier..."
-              disabled={isGenerating}
-              className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none py-1.5"
-            />
+          <button
+            type="button"
+            onClick={() => handleScrollSuggestions('right')}
+            className="p-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition shrink-0 shadow-sm"
+            title="Suggestions suivantes"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-            <div className="flex items-center space-x-1">
-              {/* Magic Enhance prompt */}
+      {/* Spacious Floating Prompt Input Form */}
+      <div className="p-3 bg-slate-950 shrink-0">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-slate-900/95 rounded-3xl p-3 flex flex-col gap-2 shadow-xl hover:shadow-2xl transition duration-200 border border-slate-800/40"
+        >
+          {/* Taller Textarea for enhanced prompt height */}
+          <textarea
+            rows={3}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+            placeholder="Décrivez ce que vous souhaitez créer ou modifier..."
+            disabled={isGenerating}
+            className="w-full min-h-[76px] bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none py-1 px-1 resize-none leading-relaxed"
+          />
+
+          {/* Action toolbar at bottom of input area */}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-800/30">
+            <span className="text-[10px] text-slate-500 px-1 font-medium hidden sm:inline">
+              Entrée pour envoyer, Maj+Entrée pour saut de ligne
+            </span>
+
+            <div className="flex items-center space-x-1.5 ml-auto">
+              {/* Inspector icon-only button */}
+              <button
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  onToggleInspector?.();
+                }}
+                className={`p-1.5 rounded-xl transition ${
+                  isInspectorActive
+                    ? 'text-violet-400 bg-violet-950/90 shadow-sm animate-pulse'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+                title={isInspectorActive ? "Désactiver l'inspecteur d'élément" : "Activer l'inspecteur visuel"}
+              >
+                <MousePointerClick className="w-4 h-4" />
+              </button>
+
+              {/* Magic Enhance prompt icon-only button */}
               <button
                 type="button"
                 onClick={handleEnhance}
                 disabled={!inputText.trim() || isEnhancing}
-                className="p-1.5 text-slate-400 hover:text-amber-300 rounded-xl transition disabled:opacity-30"
+                className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800/60 rounded-xl transition disabled:opacity-30"
                 title="Améliorer le prompt"
               >
                 <Wand2 className={`w-4 h-4 ${isEnhancing ? 'animate-spin text-amber-400' : ''}`} />
@@ -641,7 +669,7 @@ export const VibeChat: React.FC<VibeChatProps> = ({
                 type="button"
                 onClick={toggleRecording}
                 className={`p-1.5 rounded-xl transition ${
-                  isRecording ? 'text-rose-400 animate-pulse' : 'text-slate-400 hover:text-slate-200'
+                  isRecording ? 'text-rose-400 animate-pulse bg-rose-950/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                 }`}
                 title="Dictée vocale"
               >
@@ -652,7 +680,7 @@ export const VibeChat: React.FC<VibeChatProps> = ({
               <button
                 type="submit"
                 disabled={!inputText.trim() || isGenerating}
-                className="w-8 h-8 rounded-2xl bg-violet-600 hover:bg-violet-500 disabled:bg-slate-800 text-white flex items-center justify-center transition shadow-md shadow-violet-600/20 disabled:shadow-none"
+                className="w-8 h-8 rounded-2xl bg-violet-600 hover:bg-violet-500 disabled:bg-slate-800 text-white flex items-center justify-center transition shadow-md shadow-violet-600/20 disabled:shadow-none ml-1"
               >
                 {isGenerating ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

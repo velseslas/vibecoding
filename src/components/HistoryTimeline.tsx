@@ -55,14 +55,14 @@ export const HistoryTimeline: React.FC<HistoryTimelineProps> = ({
 
           <button
             onClick={fetchVersions}
-            className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition border border-slate-800"
+            className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition shadow-sm"
             title="Rafraîchir les versions"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
 
-        <div className="relative border-l-2 border-slate-800/80 ml-4 space-y-6">
+        <div className="relative border-l-2 border-slate-900 ml-4 space-y-6">
           {iterations.map((iter, idx) => {
             const isCurrent = iter.id === currentIterationId || (idx === iterations.length - 1 && !currentIterationId);
 
@@ -78,10 +78,10 @@ export const HistoryTimeline: React.FC<HistoryTimelineProps> = ({
                 />
 
                 <div
-                  className={`p-4 rounded-2xl border transition ${
+                  className={`p-4 rounded-2xl transition ${
                     isCurrent
-                      ? 'bg-slate-900/90 border-violet-600/60 shadow-lg shadow-violet-600/10'
-                      : 'bg-slate-900/40 border-slate-800/80 hover:border-slate-700'
+                      ? 'bg-slate-900/95 shadow-xl shadow-violet-600/10'
+                      : 'bg-slate-900/60 hover:bg-slate-900/80 shadow-md'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">

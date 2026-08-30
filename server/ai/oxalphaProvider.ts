@@ -1,4 +1,5 @@
 import { AIProvider, AIProviderRequest, AIProviderResponse, AIStructuredRequest, AIStructuredResponse, ProviderMetadata, ProviderConnectionTestResult, TokenUsage } from './aiProvider';
+import { aiCircuitRegistry } from './circuitBreaker';
 import { logger } from '../logger';
 
 export interface OxAlphaConfig {
@@ -28,8 +29,8 @@ export class OxAlphaProvider implements AIProvider {
   }
 
   private getApiKey(): string | null {
-    const key = process.env.OXALPHA_API_KEY;
-    if (!key || key === 'MY_OXALPHA_API_KEY' || key.trim() === '') {
+    const key = process.env.OXALPHA_API_KEY || process.env.OPENROUTER_API_KEY;
+    if (!key || key === 'MY_OXALPHA_API_KEY' || key === 'MY_OPENROUTER_API_KEY' || key.trim() === '' || key.startsWith('your_') || key.includes('EXAMPLE')) {
       return null;
     }
     return key.trim();

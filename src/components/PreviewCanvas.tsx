@@ -24,6 +24,8 @@ interface PreviewCanvasProps {
   onCatchLog: (type: 'log' | 'warn' | 'error', message: string) => void;
   isUpdating?: boolean;
   onAutoRepair?: (errorMsg: string) => void;
+  isInspectorActive?: boolean;
+  onToggleInspector?: () => void;
 }
 
 export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
@@ -34,12 +36,25 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   onCatchLog,
   isUpdating = false,
   onAutoRepair,
+  isInspectorActive: externalIsInspectorActive,
+  onToggleInspector: externalOnToggleInspector,
 }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [isInspectorActive, setIsInspectorActive] = useState(false);
+  const [internalIsInspectorActive, setInternalIsInspectorActive] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [hoveredTag, setHoveredTag] = useState<string | null>(null);
   const [lastRuntimeError, setLastRuntimeError] = useState<string | null>(null);
+
+  const isInspectorActive = externalIsInspectorActive !== undefined ? externalIsInspectorActive : internalIsInspectorActive;
+
+  const toggleInspector = () => {
+    playSound('click');
+    if (externalOnToggleInspector) {
+      externalOnToggleInspector();
+    } else {
+      setInternalIsInspectorActive((prev) => !prev);
+    }
+  };
 
   // Clear error whenever new HTML is injected
   useEffect(() => {
@@ -192,14 +207,18 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       } else if (event.data.type === 'INSPECTOR_SELECT') {
         playSound('pop');
         onSelectElement(event.data.target);
-        setIsInspectorActive(false);
+        if (externalOnToggleInspector && isInspectorActive) {
+          externalOnToggleInspector();
+        } else {
+          setInternalIsInspectorActive(false);
+        }
         setHoveredTag(null);
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onCatchLog, onSelectElement]);
+  }, [onCatchLog, onSelectElement, isInspectorActive, externalOnToggleInspector]);
 
   // Sync inspector state to iframe
   useEffect(() => {
@@ -210,11 +229,6 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       );
     }
   }, [isInspectorActive, reloadKey]);
-
-  const toggleInspector = () => {
-    playSound('click');
-    setIsInspectorActive(!isInspectorActive);
-  };
 
   const handleReload = () => {
     playSound('click');
@@ -232,81 +246,41 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   const getContainerStyles = () => {
     switch (deviceMode) {
       case 'mobile':
-        return 'w-[375px] h-[680px] rounded-[36px] shadow-2xl overflow-hidden my-auto ring-1 ring-slate-800/80';
+        return 'w-[375px] h-[680px] rounded-[36px] shadow-2xl overflow-hidden my-auto shadow-black/60';
       case 'tablet':
-        return 'w-[768px] h-[92%] rounded-3xl shadow-2xl overflow-hidden my-auto ring-1 ring-slate-800/80';
+        return 'w-[768px] h-[92%] rounded-3xl shadow-2xl overflow-hidden my-auto shadow-black/60';
       case 'desktop':
       default:
-        return 'w-full h-full rounded-2xl shadow-xl overflow-hidden ring-1 ring-slate-800/40';
+        return 'w-full h-full rounded-2xl shadow-2xl overflow-hidden shadow-black/40';
     }
   };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-950 p-2 sm:p-3 overflow-hidden relative select-none">
       {/* Floating Canvas Action Bar */}
-      <div className="h-10 px-2 flex items-center justify-between z-10 shrink-0 mb-1.5 border-b border-slate-850/40 pb-1">
-        {/* Left: Live Status + Inspector */}
-        <div className="flex items-center space-x-2">
-          {/* Status Badge */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-medium">
-            {isUpdating ? (
-              <>
+      {(isUpdating || lastRuntimeError || (hoveredTag && isInspectorActive)) && (
+        <div className="h-9 px-2 flex items-center justify-between z-10 shrink-0 mb-1 pb-1">
+          <div className="flex items-center space-x-2">
+            {isUpdating && (
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 text-[11px] font-medium shadow-sm">
                 <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
                 <span className="text-amber-300">Mise à jour...</span>
-              </>
-            ) : lastRuntimeError ? (
-              <>
+              </div>
+            )}
+            {lastRuntimeError && (
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 text-[11px] font-medium shadow-sm">
                 <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                 <span className="text-rose-300">Erreur détectée</span>
-              </>
-            ) : (
-              <>
-                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-slate-300">En direct</span>
-              </>
+              </div>
+            )}
+            {hoveredTag && isInspectorActive && (
+              <span className="text-[11px] font-mono text-violet-300 bg-violet-950/90 px-2.5 py-1 rounded-xl shadow-sm">
+                Élément survolé: {hoveredTag}
+              </span>
             )}
           </div>
-
-          <button
-            onClick={toggleInspector}
-            className={`px-3 py-1 text-xs font-medium rounded-2xl flex items-center space-x-1.5 transition ${
-              isInspectorActive
-                ? 'bg-violet-600 text-white shadow-md shadow-violet-600/30 ring-2 ring-violet-400/50 animate-pulse'
-                : 'bg-slate-900/80 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800/60'
-            }`}
-            title="Inspecteur Visuel"
-          >
-            <MousePointerClick className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">
-              {isInspectorActive ? 'Cliquez sur un élément' : 'Inspecteur'}
-            </span>
-          </button>
-
-          {hoveredTag && isInspectorActive && (
-            <span className="text-[11px] font-mono text-violet-300 bg-violet-950/80 px-2.5 py-1 rounded-xl border border-violet-800/50">
-              {hoveredTag}
-            </span>
-          )}
         </div>
-
-        {/* Right: Refresh & Open in New Tab */}
-        <div className="flex items-center space-x-1.5">
-          <button
-            onClick={handleReload}
-            className="p-1.5 bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition border border-slate-800/60"
-            title="Recharger l'aperçu"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={handleOpenNewTab}
-            className="p-1.5 bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition border border-slate-800/60"
-            title="Ouvrir dans un nouvel onglet"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Runtime Error Overlay Banner if error was caught */}
       {lastRuntimeError && (

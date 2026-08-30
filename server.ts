@@ -180,6 +180,71 @@ app.get("/api/docs", (_req, res) => {
 });
 
 // ----------------------------------------------------
+// Realtime SSE Logs Stream Endpoint
+// ----------------------------------------------------
+app.get("/api/logs/stream", (req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") {
+    res.flushHeaders();
+  }
+
+  // Prevent process crashes on socket errors
+  res.on("error", () => {});
+  req.on("error", () => {});
+
+  let closed = false;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    unsubscribe();
+    clearInterval(heartbeat);
+  };
+
+  const safeWrite = (data: string) => {
+    if (closed || res.writableEnded || res.destroyed) return;
+    try {
+      res.write(data);
+    } catch (err) {
+      cleanup();
+    }
+  };
+
+  // Initial connection message
+  const initLog = {
+    id: 'log-init-' + Date.now(),
+    timestamp: new Date().toISOString(),
+    level: 'info',
+    module: 'Server',
+    message: 'Connecté au flux SSE de logs serveur en temps réel',
+  };
+  safeWrite(`data: ${JSON.stringify(initLog)}\n\n`);
+
+  // Stream recent log history
+  const recent = logger.getRecentLogs();
+  for (const item of recent) {
+    safeWrite(`data: ${JSON.stringify(item)}\n\n`);
+  }
+
+  // Subscribe to live log emissions
+  const unsubscribe = logger.subscribe((logItem) => {
+    safeWrite(`data: ${JSON.stringify(logItem)}\n\n`);
+  });
+
+  // Send periodic heartbeat ping
+  const heartbeat = setInterval(() => {
+    safeWrite(`: ping\n\n`);
+  }, 15000);
+
+  req.on("close", cleanup);
+  res.on("close", cleanup);
+  res.on("finish", cleanup);
+});
+
+// ----------------------------------------------------
 // Alerting Rules Catalog API
 // ----------------------------------------------------
 app.get("/api/alerts/rules", (_req, res) => {
@@ -748,6 +813,7 @@ const handleGenerateApp = async (req: Request, res: Response) => {
 
   try {
     const { prompt, vibe } = req.body;
+    logger.info("GenerateApp", `Nouvelle requête de génération d'application recibue - Prompt: "${(prompt || '').slice(0, 60)}" (Vibe: ${vibe || 'défaut'})`);
 
     const systemInstruction = `Tu es le moteur d'intelligence artificielle de VibeCode Studio (style Lovable.dev).
 Ta mission est de générer une application web complète, fonctionnelle, magnifique et prête à être exécutée dans un iframe.

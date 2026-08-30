@@ -106,6 +106,26 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
   });
   const [isChatExpanded, setIsChatExpanded] = useState<boolean>(false);
   const [isChatCollapsed, setIsChatCollapsed] = useState<boolean>(false);
+  const [isInspectorActive, setIsInspectorActive] = useState<boolean>(false);
+  const [previewReloadKey, setPreviewReloadKey] = useState<number>(0);
+
+  const handleReloadPreview = () => {
+    playSound('click');
+    setPreviewReloadKey((prev) => prev + 1);
+  };
+
+  const handleOpenNewTab = () => {
+    playSound('click');
+    if (!project?.html) return;
+    const blob = new Blob([project.html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  };
+
+  const handleToggleInspector = () => {
+    playSound('click');
+    setIsInspectorActive((prev) => !prev);
+  };
 
   // Modals state
   const [isAcademyOpen, setIsAcademyOpen] = useState(false);
@@ -597,7 +617,12 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
         onRedo={handleRedo}
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
-        onReloadPreview={() => {}}
+        onReloadPreview={handleReloadPreview}
+        onOpenNewTab={handleOpenNewTab}
+        isExpanded={isChatExpanded}
+        onToggleExpand={() => setIsChatExpanded((prev) => !prev)}
+        isCollapsed={isChatCollapsed}
+        onToggleCollapse={() => setIsChatCollapsed((prev) => !prev)}
         onUpdateTitle={(title) => setProject((prev) => ({ ...prev, title }))}
       />
 
@@ -620,12 +645,15 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
           isCollapsed={isChatCollapsed}
           onToggleCollapse={() => setIsChatCollapsed((prev) => !prev)}
           currentCompassState={currentCompassState}
+          isInspectorActive={isInspectorActive}
+          onToggleInspector={handleToggleInspector}
         />
 
         {/* Right Side: Tab Switcher (Preview, Code, Components, Console, History) */}
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900">
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">
           {activeTab === 'preview' && (
             <PreviewCanvas
+              key={previewReloadKey}
               html={project.html}
               deviceMode={deviceMode}
               onSelectElement={(target) => setSelectedElement(target)}
@@ -635,6 +663,8 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
               onAutoRepair={(errMsg) => {
                 handleSendMessage(`Corrige automatiquement ce problème d'exécution : "${errMsg}"`);
               }}
+              isInspectorActive={isInspectorActive}
+              onToggleInspector={handleToggleInspector}
             />
           )}
 

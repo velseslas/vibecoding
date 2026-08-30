@@ -149,10 +149,10 @@ export class AICircuitBreakerRegistry {
   private fallbackAuditLog: FallbackAuditRecord[] = [];
 
   constructor() {
-    this.breakers.set('gemini', new ProviderCircuitBreaker('gemini', { failureThreshold: 3, recoveryTimeoutMs: 10000, requestTimeoutMs: 45000 }));
-    this.breakers.set('oxalpha', new ProviderCircuitBreaker('oxalpha', { failureThreshold: 3, recoveryTimeoutMs: 10000, requestTimeoutMs: 30000 }));
-    this.breakers.set('openai', new ProviderCircuitBreaker('openai', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 45000 }));
-    this.breakers.set('anthropic', new ProviderCircuitBreaker('anthropic', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 45000 }));
+    this.breakers.set('gemini', new ProviderCircuitBreaker('gemini', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 90000 }));
+    this.breakers.set('oxalpha', new ProviderCircuitBreaker('oxalpha', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 90000 }));
+    this.breakers.set('openai', new ProviderCircuitBreaker('openai', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 90000 }));
+    this.breakers.set('anthropic', new ProviderCircuitBreaker('anthropic', { failureThreshold: 3, recoveryTimeoutMs: 15000, requestTimeoutMs: 90000 }));
     this.breakers.set('local_engine', new ProviderCircuitBreaker('local_engine', { failureThreshold: 10, recoveryTimeoutMs: 5000, requestTimeoutMs: 10000 }));
   }
 
