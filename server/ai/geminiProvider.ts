@@ -6,7 +6,7 @@ export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
   public readonly name = 'Google Gemini';
   private aiClient: GoogleGenAI | null = null;
-  private defaultModel = 'gemini-3.7-flash';
+  private defaultModel = 'gemini-2.5-flash';
 
   private getClient(): GoogleGenAI | null {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -29,7 +29,7 @@ export class GeminiProvider implements AIProvider {
       id: this.id,
       name: this.name,
       type: 'cloud',
-      models: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+      models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
       defaultModel: this.defaultModel,
       isAvailable: this.isAvailable(),
       costPer1kInputTokens: 0.00015,
@@ -49,7 +49,7 @@ export class GeminiProvider implements AIProvider {
     action: (modelName: string) => Promise<T>
   ): Promise<{ result: T; usedModel: string }> {
     const primaryModel = requestedModel || this.defaultModel;
-    const fallbackModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'].filter((m) => m !== primaryModel);
+    const fallbackModels = ['gemini-2.5-flash', 'gemini-2.5-pro'].filter((m) => m !== primaryModel);
     const candidateModels = [primaryModel, ...fallbackModels];
 
     let lastError: any = null;

@@ -125,8 +125,8 @@ export class AIOrchestratorService {
       estimatedCostUsd,
       success,
       error,
-      providerUsed: providerInfo?.provider || 'gemini',
-      modelUsed: providerInfo?.model || 'gemini-3.7-flash',
+      providerUsed: providerInfo?.provider || 'oxalpha',
+      modelUsed: providerInfo?.model || 'z-ai/glm-5.3-flash',
       fellBack: providerInfo?.fellBack || false,
     };
   }

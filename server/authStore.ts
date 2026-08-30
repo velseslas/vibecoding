@@ -1,9 +1,10 @@
-import { dbAdapter } from './db/database';
-import { DbUser } from './db/schema';
+import { createClerkClient } from '@clerk/clerk-sdk-node';
+import { Request, Response, NextFunction } from 'express';
 import { logger } from './logger';
 
 export interface UserSession {
   uid: string;
+  clerkId: string;
   email: string;
   name: string;
   avatar: string;
@@ -14,71 +15,163 @@ export interface UserSession {
   token?: string;
 }
 
-class EnterpriseAuthStore {
-  private activeTokens: Map<string, string> = new Map(); // token -> userId
+export const CLERK_ENABLED = process.env.CLERK_ENABLED === 'true';
 
-  public loginOrRegister(email: string, name?: string): { user: UserSession; token: string } {
-    let user = dbAdapter.getUserByEmail(email);
+const DEV_USER: UserSession = {
+  uid: 'dev-user',
+  clerkId: 'dev-user',
+  name: 'Developer',
+  email: 'dev@local',
+  avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Developer',
+  role: 'creator',
+  plan: 'pro',
+  tokensRemaining: 500000,
+  monthlyQuota: 500000,
+};
 
-    if (!user) {
-      user = dbAdapter.upsertUser({
-        id: 'usr_' + Math.random().toString(36).substring(2, 9),
-        uid: 'usr_' + Math.random().toString(36).substring(2, 9),
-        email,
-        name: name || email.split('@')[0],
-        role: 'creator',
-        plan: 'pro',
-        tokenBalance: 500000,
-      });
-      logger.info('Auth', `Registered new user ${email}`, undefined, { userId: user.id });
+const clerkSecretKey = process.env.CLERK_SECRET_KEY || '';
+const clerkClient = (CLERK_ENABLED && clerkSecretKey) ? createClerkClient({ secretKey: clerkSecretKey }) : null;
+
+class AuthStore {
+  /**
+   * Returns user session according to CLERK_ENABLED flag:
+   * - If CLERK_ENABLED === false (dev mode) -> returns fixed dev user without JWT validation.
+   * - If CLERK_ENABLED === true -> validates with Clerk.
+   */
+  public async getUserByToken(token?: string): Promise<UserSession | null> {
+    if (!CLERK_ENABLED) {
+      return DEV_USER;
     }
 
-    const token = 'vibe_auth_' + Buffer.from(`${user.id}:${Date.now()}:${Math.random()}`).toString('base64');
-    this.activeTokens.set(token, user.id);
+    if (!token || !token.trim()) {
+      return null;
+    }
 
-    return {
-      user: this.toSession(user, token),
-      token,
+    const cleanToken = token.startsWith('Bearer ') ? token.slice(7).trim() : token.trim();
+    if (!cleanToken) {
+      return null;
+    }
+
+    try {
+      if (clerkClient) {
+        try {
+          const decoded = await clerkClient.verifyToken(cleanToken);
+          if (decoded && decoded.sub) {
+            const clerkUserId = decoded.sub;
+            const clerkUser = await clerkClient.users.getUser(clerkUserId);
+            const email = clerkUser.emailAddresses[0]?.emailAddress || `${clerkUserId}@user.vibecode`;
+            const name = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || email.split('@')[0];
+            const avatar = clerkUser.imageUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`;
+            
+            return {
+              uid: clerkUserId,
+              clerkId: clerkUserId,
+              email,
+              name,
+              avatar,
+              role: 'creator',
+              plan: 'pro',
+              tokensRemaining: 500000,
+              monthlyQuota: 500000,
+              token: cleanToken,
+            };
+          }
+        } catch (verifyErr: any) {
+          logger.warn('ClerkAuth', `Clerk token verification failed: ${verifyErr.message}`);
+        }
+      }
+
+      return null;
+    } catch (err: any) {
+      logger.error('ClerkAuth', `Failed to authenticate user by token: ${err.message}`);
+      return null;
+    }
+  }
+
+  public loginOrRegister(email: string, name?: string): { success: boolean; user: UserSession; token: string } {
+    if (!CLERK_ENABLED) {
+      return {
+        success: true,
+        user: DEV_USER,
+        token: 'dev-token',
+      };
+    }
+
+    const userId = `usr_${Buffer.from(email).toString('hex').slice(0, 12)}`;
+    const user: UserSession = {
+      uid: userId,
+      clerkId: userId,
+      email,
+      name: name || email.split('@')[0],
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+      role: 'creator',
+      plan: 'pro',
+      tokensRemaining: 500000,
+      monthlyQuota: 500000,
     };
-  }
 
-  public getUserByToken(token?: string): UserSession | null {
-    if (!token) {
-      // Default to admin profile for frictionless dev experience
-      const admin = dbAdapter.getUserById('usr_admin_001') || dbAdapter.upsertUser({
-        id: 'usr_admin_001',
-        uid: 'usr_admin_001',
-        email: 'noubaschool@gmail.com',
-        name: 'Creator Studio Pro',
-        role: 'admin',
-        plan: 'pro',
-        tokenBalance: 500000,
-      });
-      return this.toSession(admin, 'vibe_admin_token_default');
-    }
-
-    const userId = this.activeTokens.get(token);
-    if (!userId) return null;
-
-    const user = dbAdapter.getUserById(userId);
-    if (!user) return null;
-
-    return this.toSession(user, token);
-  }
-
-  private toSession(user: DbUser, token?: string): UserSession {
     return {
-      uid: user.id,
-      email: user.email,
-      name: user.name,
-      avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.email)}`,
-      role: user.role,
-      plan: user.plan,
-      tokensRemaining: user.tokenBalance,
-      monthlyQuota: user.plan === 'enterprise' ? 5000000 : user.plan === 'pro' ? 500000 : 50000,
-      token,
+      success: true,
+      user,
+      token: `dev_${userId}`,
     };
   }
 }
 
-export const authStore = new EnterpriseAuthStore();
+export const authStore = new AuthStore();
+
+/**
+ * requireAuth Express Middleware:
+ * - If CLERK_ENABLED === false: No auth required, attaches DEV_USER and proceeds immediately.
+ * - If CLERK_ENABLED === true: Enforces valid Clerk authentication.
+ */
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!CLERK_ENABLED) {
+    (req as any).user = DEV_USER;
+    return next();
+  }
+
+  const token = req.headers.authorization?.replace('Bearer ', '') || (req.headers['x-clerk-auth-token'] as string);
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentification requise. Veuillez vous connecter avec Clerk pour effectuer cette action.',
+      code: 'UNAUTHORIZED',
+    });
+  }
+
+  const user = await authStore.getUserByToken(token);
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Session Clerk invalide ou expirée. Veuillez vous reconnecter.',
+      code: 'INVALID_TOKEN',
+    });
+  }
+
+  (req as any).user = user;
+  next();
+}
+
+/**
+ * optionalAuth Express Middleware:
+ * - If CLERK_ENABLED === false: Attaches DEV_USER to req.user.
+ * - If CLERK_ENABLED === true: Attaches user if token is valid.
+ */
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  if (!CLERK_ENABLED) {
+    (req as any).user = DEV_USER;
+    return next();
+  }
+
+  const token = req.headers.authorization?.replace('Bearer ', '') || (req.headers['x-clerk-auth-token'] as string);
+
+  if (token) {
+    const user = await authStore.getUserByToken(token);
+    if (user) {
+      (req as any).user = user;
+    }
+  }
+  next();
+}

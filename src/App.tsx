@@ -13,6 +13,7 @@ import { TemplatesGallery } from './components/TemplatesGallery';
 import { QuotaModal } from './components/QuotaModal';
 import { ProjectManagerModal } from './components/ProjectManagerModal';
 import { UserProfileModal } from './components/UserProfileModal';
+import { TechnicalPlanPanel } from './components/TechnicalPlanPanel';
 import { 
   VibeProject, 
   WorkspaceTab, 
@@ -30,7 +31,8 @@ import {
   extractFilesFromHtml, 
   extractComponentsFromHtml, 
   generateLocalFallbackApp, 
-  applyClientModification 
+  applyClientModification,
+  buildIframeHtmlFromFiles
 } from './utils/localGenerator';
 import { playSound } from './utils/audio';
 import { productApi } from './services/api';
@@ -107,7 +109,19 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
   const [isChatExpanded, setIsChatExpanded] = useState<boolean>(false);
   const [isChatCollapsed, setIsChatCollapsed] = useState<boolean>(false);
   const [isInspectorActive, setIsInspectorActive] = useState<boolean>(false);
+  const [isExpertMode, setIsExpertMode] = useState<boolean>(() => {
+    return localStorage.getItem('vibecode_expert_mode') === 'true';
+  });
   const [previewReloadKey, setPreviewReloadKey] = useState<number>(0);
+
+  const handleToggleExpertMode = () => {
+    playSound('click');
+    setIsExpertMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('vibecode_expert_mode', next.toString());
+      return next;
+    });
+  };
 
   const handleReloadPreview = () => {
     playSound('click');
@@ -288,14 +302,16 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
         return;
       }
 
-      // Completed Iteration with Generated HTML
+      // Completed Iteration with Generated HTML & Files
       let newHtml = apiResult.previewHtml || project.html;
       if (!newHtml || newHtml.length < 50) {
         const fallback = applyClientModification(project.html, text, elementTarget);
         newHtml = fallback.html;
       }
 
-      const newFiles = extractFilesFromHtml(newHtml);
+      const newFiles = (apiResult.files && apiResult.files.length > 0)
+        ? (apiResult.files as CodeFile[])
+        : extractFilesFromHtml(newHtml);
       const newComponents = extractComponentsFromHtml(newHtml);
       const versionNumber = project.iterations.length + 1;
 
@@ -319,6 +335,7 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
         components: newComponents,
         iterations: [...project.iterations, newIteration],
         currentVersionId: newIteration.id,
+        technicalPlan: apiResult.technicalPlan || project.technicalPlan,
         updatedAt: Date.now(),
       };
 
@@ -335,6 +352,7 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
                 plan: apiResult.plan,
                 impact: apiResult.impact,
                 quality: apiResult.quality,
+                technicalPlan: apiResult.technicalPlan,
                 rawChanges: {
                   filesModified: newFiles.length,
                   componentsAdded: newComponents.length,
@@ -419,6 +437,7 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
     let description = prompt;
     let files: CodeFile[] = [];
     let components: { name: string; description: string }[] = [];
+    let technicalPlan: any = null;
     let suggestedPrompts = [
       'Ajouter un mode sombre',
       'Ajouter des confettis au clic',
@@ -438,6 +457,7 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
         description = data.description || description;
         files = data.files || extractFilesFromHtml(newHtml);
         components = data.components || extractComponentsFromHtml(newHtml);
+        technicalPlan = data.technicalPlan || null;
         if (data.suggestedPrompts) suggestedPrompts = data.suggestedPrompts;
       } else {
         throw new Error('Fallback to local generator');
@@ -461,6 +481,7 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
       files,
       components,
       suggestedPrompts,
+      technicalPlan,
       iterations: [
         {
           id: 'iter-0',
@@ -542,14 +563,11 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
 
   // Direct manual code edit from CodeEditor tab
   const handleUpdateFileContent = (fileName: string, newContent: string) => {
-    let newHtml = project.html;
-    if (fileName === 'index.html') {
-      newHtml = newContent;
-    }
-
     const updatedFiles = project.files.map((f) =>
       f.name === fileName ? { ...f, content: newContent } : f
     );
+
+    const newHtml = buildIframeHtmlFromFiles(updatedFiles);
 
     const updatedProject: VibeProject = {
       ...project,
@@ -624,6 +642,8 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
         isCollapsed={isChatCollapsed}
         onToggleCollapse={() => setIsChatCollapsed((prev) => !prev)}
         onUpdateTitle={(title) => setProject((prev) => ({ ...prev, title }))}
+        isExpertMode={isExpertMode}
+        onToggleExpertMode={handleToggleExpertMode}
       />
 
       {/* Main Workspace Split-Screen */}
@@ -648,6 +668,16 @@ Testez l'interface dans l'aperçu et personnalisez-la simplement avec vos mots.`
           isInspectorActive={isInspectorActive}
           onToggleInspector={handleToggleInspector}
         />
+
+        {/* Middle Volet (Mode Expert): Plan Technique Architectural */}
+        {isExpertMode && (
+          <TechnicalPlanPanel
+            project={project}
+            latestMessage={messages[messages.length - 1]}
+            isOpen={isExpertMode}
+            onClose={() => setIsExpertMode(false)}
+          />
+        )}
 
         {/* Right Side: Tab Switcher (Preview, Code, Components, Console, History) */}
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">

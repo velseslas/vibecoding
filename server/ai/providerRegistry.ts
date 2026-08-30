@@ -15,30 +15,60 @@ export interface ProviderConfig {
   temperature: number;
 }
 
+export interface TaskStrategy {
+  taskType: ProviderTaskType;
+  maxTokens: number;
+  timeout: number;
+  priority: number;
+  provider: string;
+}
+
 export class ProviderRegistry {
   private providers: Map<string, AIProvider> = new Map();
   private configs: Map<string, ProviderConfig> = new Map();
+  private taskStrategies: Map<ProviderTaskType, TaskStrategy> = new Map([
+    [
+      'CODE_PLANNING',
+      {
+        taskType: 'CODE_PLANNING',
+        maxTokens: 8192,
+        timeout: 30000,
+        priority: 1,
+        provider: 'oxalpha',
+      },
+    ],
+    [
+      'CODE_GENERATION',
+      {
+        taskType: 'CODE_GENERATION',
+        maxTokens: 32768,
+        timeout: 90000,
+        priority: 1,
+        provider: 'oxalpha',
+      },
+    ],
+  ]);
 
   constructor() {
-    // 1. Register Gemini
-    this.registerProvider(geminiProvider, {
-      provider: 'gemini',
-      model: 'gemini-3.7-flash',
-      enabled: true,
-      priority: 1,
-      timeout: 90000,
-      maxTokens: 8192,
-      temperature: 0.2,
-    });
-
-    // 2. Register OxAlpha
+    // 1. Register OxAlpha (Default Provider / Priority 1)
     this.registerProvider(oxalphaProvider, {
       provider: 'oxalpha',
       model: process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash',
       enabled: true,
-      priority: 2,
+      priority: 1,
       timeout: 90000,
       maxTokens: 32768,
+      temperature: 0.2,
+    });
+
+    // 2. Register Gemini (Fallback Provider / Priority 2)
+    this.registerProvider(geminiProvider, {
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      enabled: true,
+      priority: 2,
+      timeout: 90000,
+      maxTokens: 8192,
       temperature: 0.2,
     });
 
@@ -81,6 +111,23 @@ export class ProviderRegistry {
 
   public getAllConfigs(): ProviderConfig[] {
     return Array.from(this.configs.values());
+  }
+
+  public getTaskStrategy(taskType: ProviderTaskType): TaskStrategy {
+    return (
+      this.taskStrategies.get(taskType) || {
+        taskType,
+        maxTokens: 32768,
+        timeout: 90000,
+        priority: 1,
+        provider: 'oxalpha',
+      }
+    );
+  }
+
+  public setTaskStrategy(taskType: ProviderTaskType, strategy: Partial<TaskStrategy>): void {
+    const existing = this.getTaskStrategy(taskType);
+    this.taskStrategies.set(taskType, { ...existing, ...strategy });
   }
 
   public getActiveProviders(): AIProvider[] {

@@ -34,6 +34,7 @@ import { referenceResolver, ReferenceResolutionResult } from './referenceResolve
 import { conversationProductModifier } from './conversationProductModifier';
 import { providerRegistry } from '../ai/providerRegistry';
 import { logger } from '../logger';
+import { buildIframeHtml, extractFilesFromHtml, VirtualFile } from '../preview/buildIframeHtml';
 
 export interface ProcessMessageRequest {
   projectId: string;
@@ -41,7 +42,8 @@ export interface ProcessMessageRequest {
   prompt: string;
   vibe?: string;
   currentHtml?: string;
-  files?: Array<{ name: string; content?: string }>;
+  files?: Array<{ name: string; type?: string; content?: string }>;
+  targetFile?: string;
   confirmedByUser?: boolean;
   rejectPlan?: boolean;
   rollbackVersionId?: string;
@@ -72,11 +74,14 @@ export interface ConversationPipelineResult {
   productUnderstanding?: ProductUnderstanding;
   productBlueprint?: ProductBlueprint;
   uxPlan?: UXPlan;
+  technicalPlan?: any;
   quality?: QualityReport;
   productAudit?: ProductQualityReport;
   visualAudit?: VisualAuditReport;
   previewId?: string;
   previewHtml?: string;
+  files?: VirtualFile[];
+  entryPoint?: string;
   versionId?: string;
   validatedArtifact?: ValidatedArtifact;
   artifactVerification?: VerificationResult;
@@ -723,9 +728,10 @@ export class ConversationEngine {
       preferredProviderId: req.preferredProvider,
     });
 
-    let generatedHtml = await this.synthesizeCode(
+    const synthesized = await this.synthesizeCode(
       req.prompt,
       currentHtml,
+      existingFiles,
       req.vibe,
       intentResult.intent,
       productBlueprint,
@@ -734,8 +740,13 @@ export class ConversationEngine {
         preferredProvider: req.preferredProvider,
         elementTarget: req.elementTarget,
         resolvedTargetSelector: resolvedRef.resolvedTargetSelector,
+        targetFile: req.targetFile,
       }
     );
+
+    let generatedHtml = synthesized.html;
+    let synthesizedFiles = synthesized.files;
+    let entryPoint = synthesized.entryPoint || 'index.html';
 
     // 11. Create Immutable Validated Changeset PRIOR to application
     const targetVersionNumber = projectIntelligence.getHistory(projectId).length + 1;
@@ -746,9 +757,9 @@ export class ConversationEngine {
       planId: plan.id,
       versionNumber: targetVersionNumber,
       summary: `Itération [${intentResult.intent}] : ${req.prompt.substring(0, 50)}`,
-      diff: `+ ${generatedHtml.length} octets générés pour ${intentResult.intent}`,
+      diff: `+ ${synthesizedFiles.length} fichiers générés (${generatedHtml.length} octets) pour ${intentResult.intent}`,
       html: generatedHtml,
-      files: [{ name: 'index.html', content: generatedHtml }],
+      files: synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
       actor: userId,
       autonomyLevel: autonomyEval.action === 'AUTONOMOUS_EXECUTION' ? 'AUTONOMOUS' : autonomyEval.action === 'PROPOSE_PLAN' ? 'MEDIUM' : 'LOW',
       rationale: autonomyEval.rationale,
@@ -772,13 +783,13 @@ export class ConversationEngine {
       title: changeset.summary,
       provenance: req.confirmedByUser ? 'USER_VALIDATED' : 'SYSTEM_AUTONOMOUS',
       html: appliedHtml,
-      files: [{ name: 'index.html', content: appliedHtml }],
+      files: synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
       validatedBy: userId,
     });
 
     let finalVerification = validatedArtifactEngine.verifyIntegrity(changeset.id, {
       html: appliedHtml,
-      files: [{ name: 'index.html', content: appliedHtml }],
+      files: synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
     });
 
     if (!finalVerification.isMatch) {
@@ -815,6 +826,7 @@ export class ConversationEngine {
       const isCodeModifiedByRepair = repairResult.repairedHtml !== appliedHtml;
 
       generatedHtml = repairResult.repairedHtml;
+      synthesizedFiles = extractFilesFromHtml(generatedHtml);
       quality = repairResult.finalQuality;
       repairAttempts = repairResult.attemptCount;
 
@@ -831,7 +843,7 @@ export class ConversationEngine {
         const repairArtifactResult = validatedArtifactEngine.createRepairChangeset({
           parentChangesetId: changeset.id,
           repairedHtml: generatedHtml,
-          repairedFiles: [{ name: 'index.html', content: generatedHtml }],
+          repairedFiles: synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
           repairAttempts: repairResult.attemptCount,
           appliedFixes,
           issuesDetected: quality.issues.map((i) => i.message),
@@ -856,6 +868,7 @@ export class ConversationEngine {
       const prodRepair = productRepairEngine.repairProductArtifact(generatedHtml, productBlueprint, productAudit, req.prompt);
       if (prodRepair.success) {
         generatedHtml = prodRepair.repairedHtml;
+        synthesizedFiles = extractFilesFromHtml(generatedHtml);
         appliedHtml = generatedHtml;
         productAudit = prodRepair.finalAudit || productAudit;
         repairAttempts += prodRepair.repairAttempts || prodRepair.attemptCount || 1;
@@ -863,7 +876,7 @@ export class ConversationEngine {
         const repairArtifactResult = validatedArtifactEngine.createRepairChangeset({
           parentChangesetId: finalAppliedChangeset.id,
           repairedHtml: generatedHtml,
-          repairedFiles: [{ name: 'index.html', content: generatedHtml }],
+          repairedFiles: synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
           repairAttempts: prodRepair.repairAttempts || prodRepair.attemptCount || 1,
           appliedFixes: prodRepair.appliedFixes || [],
           issuesDetected: (productAudit.issues || []).map((i) => i.message),
@@ -880,7 +893,7 @@ export class ConversationEngine {
     // 15. Quality Validation & Sandbox Preview
     compass.transitionTo('VALIDATING', 'Vérification de l\'intégrité du runtime et isolation sandbox');
     const finalUnderstanding = appUnderstandingService.analyzeProject(
-      [{ name: 'index.html', content: generatedHtml }],
+      synthesizedFiles.map((f) => ({ name: f.name, content: f.content })),
       generatedHtml
     );
 
@@ -902,6 +915,7 @@ export class ConversationEngine {
       const visualRepair = visualRepairEngine.repairVisualIssues(generatedHtml, visualAudit, finalAppliedChangeset.id);
       if (visualRepair.success && visualRepair.repairChangeset && visualRepair.repairArtifact && visualRepair.verification) {
         generatedHtml = visualRepair.repairedHtml;
+        synthesizedFiles = extractFilesFromHtml(generatedHtml);
         finalAppliedChangeset = visualRepair.repairChangeset;
         finalValidatedArtifact = visualRepair.repairArtifact;
         finalVerification = visualRepair.verification;
@@ -929,7 +943,11 @@ export class ConversationEngine {
       userIntent: req.prompt,
       aiPrompt: req.prompt,
       html: generatedHtml,
-      files: [{ name: 'index.html', type: 'html', content: generatedHtml }],
+      files: synthesizedFiles.map((f) => ({
+        name: f.name,
+        type: (f.type as any) || (f.name.endsWith('.css') ? 'css' : f.name.endsWith('.html') ? 'html' : 'javascript'),
+        content: f.content,
+      })),
       components: finalUnderstanding.components,
       suggestedPrompts: ['Ajouter un filtre interactif', 'Activer le mode sombre', 'Exporter les données'],
       authorId: userId,
@@ -1037,11 +1055,14 @@ export class ConversationEngine {
       productUnderstanding,
       productBlueprint,
       uxPlan,
+      technicalPlan: synthesized.technicalPlan,
       quality,
       productAudit,
       visualAudit,
       previewId: previewResult.previewId,
       previewHtml: previewResult.safeHtml,
+      files: synthesizedFiles,
+      entryPoint,
       versionId: revision.id,
       validatedArtifact: finalValidatedArtifact,
       artifactVerification: finalVerification,
@@ -1082,11 +1103,76 @@ export class ConversationEngine {
   }
 
   /**
-   * Resilient, feature-rich code synthesizer powered by GLM-5.3-Flash / OpenRouter / Gemini
+   * Pass 1: Generates architectural & technical JSON plan (no code)
+   */
+  private async generateTechnicalPlan(
+    prompt: string,
+    blueprint?: ProductBlueprint,
+    uxPlan?: UXPlan,
+    options?: { preferredProvider?: string }
+  ): Promise<any> {
+    const sysInstructionPlan = "Tu es architecte senior. Analyse ce blueprint et génère un plan technique JSON : structure des fichiers, logique JS par module, données/états, interactions, dépendances. PAS de code, juste le plan.";
+
+    let planPrompt = `PROMPT UTILISATEUR : "${prompt}"\n`;
+    if (blueprint) {
+      planPrompt += `BLUEPRINT PRODUIT :
+- Titre : ${blueprint.title}
+- Archétype : ${blueprint.archetype}
+- Objectif : ${blueprint.goal}
+- Fonctionnalités clés : ${blueprint.features.map((f) => f.name).join(', ')}
+- Modèle de données : ${blueprint.dataModel.map((d) => d.name).join(', ')}
+- États UI : ${blueprint.uiStates.join(', ')}
+`;
+    }
+    if (uxPlan) {
+      planPrompt += `PLAN UX :
+- Structure conteneur : ${uxPlan.layoutArchitecture.containerClass}
+- Navigation : ${uxPlan.layoutArchitecture.navigationType}
+- Éléments focaux : ${uxPlan.visualHierarchy.focalPointElement}
+`;
+    }
+    planPrompt += `\nGénère le plan technique JSON exhaustif pour structurer l'application (structure des fichiers, logique JS par module, données/états, interactions, dépendances).`;
+
+    const { result } = await providerRegistry.executeWithRouting(
+      'CODE_PLANNING',
+      async (provider, providerCfg) => {
+        const resp = await provider.generateText({
+          prompt: planPrompt,
+          systemInstruction: sysInstructionPlan,
+          temperature: 0.2,
+          maxTokens: 8192,
+          timeoutMs: 30000,
+        });
+        return resp.text;
+      },
+      { preferredProviderId: options?.preferredProvider }
+    );
+
+    let planData: any = null;
+    try {
+      let cleaned = (result || '').trim();
+      if (cleaned.includes('```json')) {
+        cleaned = cleaned.split('```json')[1].split('```')[0].trim();
+      } else if (cleaned.includes('```')) {
+        cleaned = cleaned.split('```')[1].split('```')[0].trim();
+      }
+      planData = JSON.parse(cleaned);
+    } catch {
+      planData = {
+        title: blueprint?.title || 'Plan Technique',
+        rawPlan: result || 'Plan technique d\'architecture généré',
+      };
+    }
+    return planData;
+  }
+
+  /**
+   * Resilient, 2-Pass multi-file code synthesizer powered by GLM-5.3-Flash / OpenRouter / Gemini
    */
   private async synthesizeCode(
     prompt: string,
     currentHtml: string,
+    currentFiles: Array<{ name: string; type?: string; content?: string }> = [],
     vibe = 'Moderne',
     intent: UserIntentType,
     blueprint?: ProductBlueprint,
@@ -1101,8 +1187,14 @@ export class ConversationEngine {
         innerText?: string;
       };
       resolvedTargetSelector?: string;
+      targetFile?: string;
     }
-  ): Promise<string> {
+  ): Promise<{
+    files: VirtualFile[];
+    entryPoint: string;
+    html: string;
+    technicalPlan?: any;
+  }> {
     const activeProviders = providerRegistry.getActiveProviders();
     const hasRealAI = activeProviders.some((p) => p.id === 'gemini' || p.id === 'oxalpha');
 
@@ -1112,69 +1204,48 @@ export class ConversationEngine {
         const effectiveBlueprint = blueprint || productBlueprintService.generateBlueprint(understanding, prompt);
         const effectiveUxPlan = uxPlan || uxProductPlanner.planUX(effectiveBlueprint);
 
-        const sysInstruction = `Tu es l'architecte principal d'Intelligence Artificielle et de Développement Logiciel de VibeCode Studio.
-Ta mission est de générer une application web produit complète, fonctionnelle, magnifique et de NIVEAU PRODUCTION en un seul fichier HTML autonome exécutable dans un iframe.
+        // --- PASS 1: Technical Architecture Plan ---
+        const planStart = Date.now();
+        const technicalPlan = await this.generateTechnicalPlan(
+          prompt,
+          effectiveBlueprint,
+          effectiveUxPlan,
+          { preferredProvider: options?.preferredProvider }
+        );
+        const planDuration = Date.now() - planStart;
+        logger.info('ConversationEngine', `[PASS 1] Plan generated in ${planDuration}ms`);
 
-EXIGENCES CRITIQUES DE QUALITÉ PRODUIT (REASONING & HIGH-CAPACITY CODE GENERATION) :
-1. ANALYSE ET CONCEPTION ARCHITECTURALE : Réfléchis attentivement à la structure globale, aux rôles des composants et au modèle de données réactif avant de générer le code HTML.
-2. EXPÉRIENCE PRODUIT COMPLÈTE (NON-MVP) : L'application NE DOIT PAS être un squelette simplifié ou un composant isolé. Pour toute demande d'application ou de clone (ex: Facebook, CRM, Marketplace, Kanban, Chantiers BTP, Dashboard), tu dois générer TOUTES les surfaces d'interface :
-   - Header complet avec logo, recherche interactive, onglets de navigation actifs, badges de notifications et menu profil.
-   - Disposition multi-colonnes réactive (ex: Navigation gauche, Fil d'actualité/Contenu principal au centre, Widgets/Statistiques à droite).
-   - Composants interactifs riches (carrousels, cartes dynamiques, formulaires de saisie, barres de filtres, recherche en direct).
-   - Modales contextuelles fonctionnelles (création d'élément, détails, filtres) contrôlées par JavaScript.
-3. STYLISME & DESIGN SYSTEM TAILWIND CSS :
-   - Inclut Tailwind CSS v3 via CDN (<script src="https://cdn.tailwindcss.com"></script>).
-   - Applique une typographie soignée (Plus Jakarta Sans ou Inter via Google Fonts).
-   - Palette de couleurs harmonieuses, contrastes élevés (WCAG), ombres douces et arrondis modernes (8px à 16px).
-4. ICÔNES LUCIDE :
-   - Inclut Lucide Icons via CDN (<script src="https://unpkg.com/lucide@latest"></script>).
-   - Invoque lucide.createIcons() dans le script au chargement du DOM et après chaque modification dynamique.
-5. INTERACTIVITÉ JAVASCRIPT TOTALE & GESTION D'ÉTAT LOCAL :
-   - Écris du code JavaScript natif propre et réactif pour gérer tous les boutons cliquables.
-   - Implémente la logique d'état : ajouts/suppressions dynamiques d'éléments, filtres en temps réel, basculement d'onglets, ouvertures/fermetures de modales, likes/compteurs réactifs.
-6. DONNÉES RÉALISTES & ANCRAGE DOMAINE :
-   - Interdiction formelle de texte générique d'attente ("Lorem Ipsum", "Test 123"). Utilise des données réalistes et crédibles adaptées au domaine.
-7. FORMAT DE RÉPONSE STRICT :
-   - Renvoie UNIQUEMENT le code HTML complet (du <!DOCTYPE html> à </html>) ou un JSON {"html": "..."}. Aucun texte explicatif hors du code HTML.
+        // --- PASS 2: Code Generation following the approved plan ---
+        const sysInstruction = `Tu es l'architecte principal de VibeCode Studio.
 
-TU DISPOSES D'UNE FENÊTRE DE SORTIE ÉTENDUE DE 32768 TOKENS. UTILISE CETTE CAPACITÉ POUR GÉNÉRER UNE APPLICATION TRÈS RICHE ET COMPLÈTE.`;
+RÈGLES ABSOLUES :
+1. Tu as reçu un PLAN TECHNIQUE approuvé. Suis-le À LA LETTRE.
+2. Chaque bouton a un onclick tangible. Pas de placeholder.
+3. Chaque modale s'ouvre ET se ferme.
+4. Données réalistes : vrais noms, textes cohérents, pas de Lorem Ipsum.
+5. Design moderne : Tailwind CSS, ombres douces, arrondis 8-16px, typographie soignée.
+6. Responsive mobile-first.
+7. Accessibilité : aria-labels, contrastes WCAG AA.
+8. Pas de memory leaks, nettoyer les event listeners.
+9. FORMAT : JSON { files: [{name, type, content}] }`;
 
-        let userPromptText = `DEMANDE DE L'UTILISATEUR : "${prompt}"\nSTYLE / VIBE SÉLECTIONNÉ : "${vibe}".\nINTENTION IDENTIFIÉE : ${intent}.\n`;
+        let userPromptText = `Plan technique approuvé :\n${JSON.stringify(technicalPlan, null, 2)}\n\nGénère maintenant le code conforme à ce plan.\nDEMANDE DE L'UTILISATEUR : "${prompt}"\nSTYLE / VIBE SÉLECTIONNÉ : "${vibe}".\nINTENTION IDENTIFIÉE : ${intent}.\n`;
 
-        if (effectiveBlueprint) {
-          userPromptText += `
-SPÉCIFICATIONS D'ARCHÉTYPE PRODUIT [${effectiveBlueprint.archetype}] :
-- Nom du produit : ${effectiveBlueprint.title}
-- Slogan / Vision : ${effectiveBlueprint.tagline}
-- Objectif utilisateur principal : ${effectiveBlueprint.goal}
-
-FONCTIONNALITÉS CLÉS ET EXPLICITES OBLIGATOIRES :
-${effectiveBlueprint.features.map(f => `- ${f.name} : ${f.description || f.priority}`).join('\n')}
-
-ÉCRANS ET SURFACES DE NAVIGATION :
-${effectiveBlueprint.screens.map(s => `- Vue : ${s.name} (${s.title} - ${s.layoutType})`).join('\n')}
-
-ENTITÉS DE DONNÉES ET ÉTATS UI :
-- Entités de données : ${effectiveBlueprint.dataModel.map(d => `${d.name} (${(d.fields || []).map(f => f.name).join(', ')})`).join('\n')}
-- États UI interactifs : ${effectiveBlueprint.uiStates.join(', ')}
-`;
+        if (options?.targetFile) {
+          userPromptText += `FICHIER CIBLÉ EN PRIORITÉ : "${options.targetFile}". Tu peux modifier ce fichier ou en ajouter de nouveaux si nécessaire.\n`;
         }
 
-        if (effectiveUxPlan) {
-          userPromptText += `
-STRUCTURE UX ET DISPOSITION :
-- Structure de disposition : Container [${effectiveUxPlan.layoutArchitecture.containerClass}], Header [${effectiveUxPlan.layoutArchitecture.headerConfig}], Stage [${effectiveUxPlan.layoutArchitecture.stageStructure}], Nav [${effectiveUxPlan.layoutArchitecture.navigationType}]
-- Consignes typographiques : ${effectiveUxPlan.visualHierarchy.typographyScale}
-- Point focal principal : ${effectiveUxPlan.visualHierarchy.focalPointElement}
-`;
+        if (currentFiles && currentFiles.length > 0) {
+          userPromptText += `\nFICHIERS ACTUELS DU PROJET :\n`;
+          for (const f of currentFiles) {
+            userPromptText += `\n--- FICHIER: ${f.name} (${f.type || 'code'}) ---\n${f.content || ''}\n`;
+          }
+          userPromptText += `\nConserve toutes les données et fonctionnalités existantes tout en intégrant la demande utilisateur.`;
+        } else if (currentHtml && currentHtml.length > 50) {
+          userPromptText += `\nCODE HTML EXISTANT DE L'APPLICATION (À DÉCOMPOSER ET ENRICHIR EN MULTI-FICHIERS) :\n\`\`\`html\n${currentHtml}\n\`\`\`\n`;
         }
 
-        if (currentHtml && currentHtml.length > 50) {
-          userPromptText += `\nCODE HTML EXISTANT DE L'APPLICATION (À ENRICHIR/MODIFIER) :\n\`\`\`html\n${currentHtml}\n\`\`\`\nConserve toutes les données et fonctionnalités existantes tout en intégrant la demande utilisateur.`;
-        } else {
-          userPromptText += `\nGÉNÈRE UNE NOUVELLE APPLICATION PRODUIT COMPLÈTE ET ULTRA-SOIGNÉE CORRESPONDANT EXACTEMENT À CES SPÉCIFICATIONS.`;
-        }
-
+        const codeStart = Date.now();
         const { result } = await providerRegistry.executeWithRouting(
           'CODE_GENERATION',
           async (provider, providerCfg) => {
@@ -1189,23 +1260,96 @@ STRUCTURE UX ET DISPOSITION :
           },
           { preferredProviderId: options?.preferredProvider }
         );
+        const codeDuration = Date.now() - codeStart;
+        logger.info('ConversationEngine', `[PASS 2] Code generated in ${codeDuration}ms`);
 
-        if (result && result.length > 50) {
-          let extractedHtml = result.trim();
-          if (extractedHtml.includes('```html')) {
-            extractedHtml = extractedHtml.split('```html')[1].split('```')[0].trim();
-          } else if (extractedHtml.includes('```')) {
-            extractedHtml = extractedHtml.split('```')[1].split('```')[0].trim();
+        if (result && result.length > 10) {
+          let cleaned = result.trim();
+          if (cleaned.includes('```json')) {
+            cleaned = cleaned.split('```json')[1].split('```')[0].trim();
+          } else if (cleaned.includes('```')) {
+            cleaned = cleaned.split('```')[1].split('```')[0].trim();
           }
-          if (extractedHtml.startsWith('{')) {
+
+          let parsedFiles: VirtualFile[] = [];
+          let entryPoint = 'index.html';
+
+          let parsed: any;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (parseErr: any) {
+            logger.warn('ConversationEngine', `Échec du parsing JSON direct (${parseErr.message}). Tentative d'auto-réparation LLM...`);
+            // Auto-repair intelligent via LLM (1 retry max)
             try {
-              const parsed = JSON.parse(extractedHtml);
-              if (parsed.html) extractedHtml = parsed.html;
-            } catch {}
+              const repairPrompt = `Ce JSON est invalide. Erreur : ${parseErr.message}. Corrige-le et retourne un JSON valide avec la même structure.\n\nJSON erroné :\n${cleaned}`;
+              const repairRes = await providerRegistry.executeWithRouting(
+                'CODE_GENERATION',
+                async (provider, providerCfg) => {
+                  const resp = await provider.generateText({
+                    prompt: repairPrompt,
+                    systemInstruction: 'Tu es un réparateur JSON expert. Retourne UNIQUEMENT le JSON corrigé valide sans préambule ni balises Markdown.',
+                    temperature: 0.1,
+                    maxTokens: providerCfg.maxTokens || 32768,
+                    timeoutMs: 45000,
+                  });
+                  return resp.text;
+                },
+                { preferredProviderId: options?.preferredProvider }
+              );
+
+              let repairedCleaned = (repairRes.result || '').trim();
+              if (repairedCleaned.includes('```json')) {
+                repairedCleaned = repairedCleaned.split('```json')[1].split('```')[0].trim();
+              } else if (repairedCleaned.includes('```')) {
+                repairedCleaned = repairedCleaned.split('```')[1].split('```')[0].trim();
+              }
+              parsed = JSON.parse(repairedCleaned);
+            } catch (secondErr: any) {
+              logger.error('ConversationEngine', `Auto-réparation LLM échouée : ${secondErr.message}`);
+              throw new Error(`Le code généré est invalide et n'a pas pu être réparé automatiquement (${secondErr.message}).`);
+            }
           }
-          if (extractedHtml.includes('<!DOCTYPE html>') || extractedHtml.includes('<html')) {
-            return extractedHtml;
+
+          if (parsed) {
+            if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+              parsedFiles = parsed.files.map((f: any) => ({
+                name: f.name || 'index.html',
+                type: f.type || (f.name.endsWith('.css') ? 'css' : f.name.endsWith('.html') ? 'html' : 'javascript'),
+                content: typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2),
+              }));
+              if (parsed.entryPoint) entryPoint = parsed.entryPoint;
+            } else if (typeof parsed.html === 'string') {
+              parsedFiles = extractFilesFromHtml(parsed.html);
+            }
           }
+
+          if (parsedFiles.length === 0) {
+            if (currentFiles && currentFiles.length > 0) {
+              parsedFiles = currentFiles.map((f) => ({
+                name: f.name,
+                type: (f.type as any) || (f.name.endsWith('.css') ? 'css' : f.name.endsWith('.html') ? 'html' : 'javascript'),
+                content: f.content || '',
+              }));
+            } else if (currentHtml && currentHtml.length > 50) {
+              parsedFiles = extractFilesFromHtml(currentHtml);
+            } else {
+              parsedFiles = [
+                {
+                  name: 'index.html',
+                  type: 'html',
+                  content: `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Application</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-950 text-white min-h-screen p-8"><div id="app"><h1 class="text-2xl font-bold">Application VibeCode</h1></div></body></html>`,
+                },
+              ];
+            }
+          }
+
+          const assembledHtml = buildIframeHtml(parsedFiles, entryPoint);
+          return {
+            files: parsedFiles,
+            entryPoint,
+            html: assembledHtml,
+            technicalPlan,
+          };
         }
       } catch (err: any) {
         logger.error('ConversationEngine', `LLM code synthesis failed: ${err.message}`);
@@ -1218,3 +1362,4 @@ STRUCTURE UX ET DISPOSITION :
 }
 
 export const conversationEngine = new ConversationEngine();
+

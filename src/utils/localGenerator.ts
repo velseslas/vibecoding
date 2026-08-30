@@ -349,3 +349,58 @@ export function applyClientModification(
     ]
   };
 }
+
+/**
+ * Assembles multi-file project into a single runnable HTML for preview iframe
+ */
+export function buildIframeHtmlFromFiles(files: CodeFile[], entryPoint = 'index.html'): string {
+  if (!files || files.length === 0) {
+    return `<!DOCTYPE html><html><body class="bg-slate-950 text-white p-8"><p>Aucun fichier à afficher</p></body></html>`;
+  }
+
+  let indexFile = files.find((f) => f.name === entryPoint || f.name === 'index.html');
+  if (!indexFile) {
+    indexFile = files.find((f) => f.name.endsWith('.html'));
+  }
+
+  let baseHtml = indexFile?.content || `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>App</title><script src="https://cdn.tailwindcss.com"></script><script src="https://unpkg.com/lucide@latest"></script></head><body class="bg-slate-950 text-white min-h-screen"><div id="app"></div></body></html>`;
+
+  // Inline CSS files
+  const cssFiles = files.filter((f) => f.name !== indexFile?.name && (f.type === 'css' || f.name.endsWith('.css')));
+  for (const cssFile of cssFiles) {
+    const linkRegex = new RegExp(`<link[^>]*href=["']${escapeRegex(cssFile.name)}["'][^>]*>`, 'gi');
+    const styleTag = `<style data-source="${cssFile.name}">\n${cssFile.content}\n</style>`;
+    if (linkRegex.test(baseHtml)) {
+      baseHtml = baseHtml.replace(linkRegex, styleTag);
+    } else {
+      if (baseHtml.includes('</head>')) {
+        baseHtml = baseHtml.replace('</head>', `${styleTag}\n</head>`);
+      } else {
+        baseHtml = `${styleTag}\n${baseHtml}`;
+      }
+    }
+  }
+
+  // Inline JS files
+  const jsFiles = files.filter((f) => f.name !== indexFile?.name && (f.type === 'javascript' || f.name.endsWith('.js')));
+  for (const jsFile of jsFiles) {
+    const scriptRegex = new RegExp(`<script[^>]*src=["']${escapeRegex(jsFile.name)}["'][^>]*>\\s*<\\/script>`, 'gi');
+    const scriptTag = `<script data-source="${jsFile.name}">\n${jsFile.content}\n</script>`;
+    if (scriptRegex.test(baseHtml)) {
+      baseHtml = baseHtml.replace(scriptRegex, scriptTag);
+    } else {
+      if (baseHtml.includes('</body>')) {
+        baseHtml = baseHtml.replace('</body>', `${scriptTag}\n</body>`);
+      } else {
+        baseHtml = `${baseHtml}\n${scriptTag}`;
+      }
+    }
+  }
+
+  return baseHtml;
+}
+
+function escapeRegex(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+

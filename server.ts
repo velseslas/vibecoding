@@ -35,20 +35,45 @@ import { designAuditEngine } from "./server/audit/designAuditEngine";
 import { productObservabilityService } from "./server/observability/productObservability";
 import { realProductGenerationBenchmarkRunner } from "./server/tests/realProductGenerationBenchmark";
 
-import { rateLimiter } from "./server/rateLimiter";
+import { rateLimiter, conversationRateLimiter, generationRateLimiter, apiGeneralRateLimiter } from "./server/rateLimiter";
+import { validateBody, conversationMessageSchema, generateAppSchema, iterateAppSchema } from "./server/validation/schemas";
 import { statsTracker } from "./server/statsTracker";
 import { projectStore } from "./server/projectStore";
-import { authStore } from "./server/authStore";
+import { buildIframeHtml, extractFilesFromHtml } from "./server/preview/buildIframeHtml";
+import { authStore, requireAuth, optionalAuth } from "./server/authStore";
 import { jobQueue } from "./server/jobQueue";
 import { billingService } from "./server/billingService";
 import { securityShield } from "./server/securityShield";
+import helmet from "helmet";
+import cors from "cors";
 
 dotenv.config();
+
+const CLERK_ENABLED = process.env.CLERK_ENABLED === "true";
+logger.info("Auth", `Clerk Auth Status: ${CLERK_ENABLED ? "ENABLED (Production mode)" : "DISABLED (Development mode - single dev user)"}`);
 
 const app = express();
 const PORT = 3000;
 
-// Raw body parser for Stripe Webhook signature verification
+// 1. Security Headers with Helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    frameguard: false,
+  })
+);
+
+// 2. CORS configuration
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+
+// 3. Raw body parser for Stripe Webhook signature verification
 app.use(
   express.json({
     limit: "15mb",
@@ -58,7 +83,7 @@ app.use(
   })
 );
 
-// 1. Correlation & Observability Middleware (X-Request-Id)
+// 4. Correlation & Observability Middleware (X-Request-Id)
 app.use(telemetry.middleware());
 
 // Helper for Client IP
@@ -370,16 +395,15 @@ app.post("/api/projects/:id/rollback", (req, res) => {
 // ----------------------------------------------------
 // Unified Vibecoding Conversation & Intelligence API
 // ----------------------------------------------------
-app.post("/api/conversation/message", async (req, res) => {
+app.post("/api/conversation/message", conversationRateLimiter, validateBody(conversationMessageSchema), optionalAuth, async (req, res) => {
   try {
     const { projectId, prompt, vibe, currentHtml, files, confirmedByUser, rejectPlan, changesetId, rejectChangesetId, elementTarget } = req.body;
     if (!prompt && !rejectPlan && !changesetId && !rejectChangesetId) {
       return res.status(400).json({ success: false, error: "Prompt ou action requise" });
     }
 
-    const token = req.headers.authorization?.replace("Bearer ", "");
-    const user = authStore.getUserByToken(token);
-    const userId = user?.uid || "usr_admin_001";
+    const user = (req as any).user || (await authStore.getUserByToken(req.headers.authorization?.replace("Bearer ", "")));
+    const userId = user?.uid || `usr_creator_${getClientId(req).replace(/[^a-zA-Z0-9]/g, '')}`;
 
     const result = await conversationEngine.processUserMessage({
       projectId: projectId || "demo-saas-1",
@@ -416,10 +440,10 @@ app.get("/api/changesets/:id", (req, res) => {
   res.json({ success: true, changeset });
 });
 
-app.post("/api/changesets/:id/approve", (req, res) => {
+app.post("/api/changesets/:id/approve", async (req, res) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
-    const user = authStore.getUserByToken(token);
+    const user = await authStore.getUserByToken(token);
     const userId = user?.uid || "usr_admin_001";
     const approved = validatedArtifactEngine.approveChangeset(req.params.id, userId);
     res.json({ success: true, changeset: approved });
@@ -428,10 +452,10 @@ app.post("/api/changesets/:id/approve", (req, res) => {
   }
 });
 
-app.post("/api/changesets/:id/reject", (req, res) => {
+app.post("/api/changesets/:id/reject", async (req, res) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
-    const user = authStore.getUserByToken(token);
+    const user = await authStore.getUserByToken(token);
     const userId = user?.uid || "usr_admin_001";
     const { reason } = req.body;
     const rejected = validatedArtifactEngine.rejectChangeset(req.params.id, userId, reason);
@@ -482,10 +506,10 @@ app.get("/api/projects/:id/metrics", (req, res) => {
 // ----------------------------------------------------
 // Preview Engine Lifecycle & Telemetry API
 // ----------------------------------------------------
-app.post("/api/preview/create", (req, res) => {
+app.post("/api/preview/create", async (req, res) => {
   const { projectId, htmlContent, versionId } = req.body;
   const token = req.headers.authorization?.replace("Bearer ", "");
-  const user = authStore.getUserByToken(token);
+  const user = await authStore.getUserByToken(token);
 
   const preview = previewLifecycleService.createPreviewSession({
     projectId: projectId || "demo-saas-1",
@@ -739,9 +763,9 @@ app.get("/api/billing/tiers", (_req, res) => {
   res.json({ success: true, tiers: billingService.getTiers() });
 });
 
-app.get("/api/billing/invoices", (req, res) => {
+app.get("/api/billing/invoices", async (req, res) => {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  const user = authStore.getUserByToken(token);
+  const user = await authStore.getUserByToken(token);
   const invoices = billingService.getInvoices(user?.uid || "usr_admin_001");
   res.json({ success: true, invoices });
 });
@@ -749,7 +773,7 @@ app.get("/api/billing/invoices", (req, res) => {
 app.post("/api/billing/checkout", async (req, res) => {
   const { planId, email } = req.body;
   const token = req.headers.authorization?.replace("Bearer ", "");
-  const user = authStore.getUserByToken(token);
+  const user = await authStore.getUserByToken(token);
   const checkout = await billingService.createCheckoutSession(user?.uid || "usr_admin_001", planId || "pro", email || user?.email);
   res.json({ success: true, ...checkout });
 });
@@ -778,7 +802,7 @@ Fonctionnalités clés : interface ultra-intuitive, données dynamiques avec per
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-2.5-flash",
       contents: `Tu es un expert en Prompt Engineering pour le Vibecoding (création d'applications web sans coder pour débutants, style Lovable).
 L'utilisateur débutant a écrit cette idée : "${prompt}"
 Vibe/Style souhaité : "${vibe || "Moderne et soigné"}"
@@ -805,7 +829,7 @@ Renvoie UNIQUEMENT le texte du prompt enrichi, sans préambule ni balises de cod
 });
 
 // ----------------------------------------------------
-// Generate Code API (Standard JSON with Sandbox Isolation)
+// Generate Code API (Multi-File JSON Architecture with Sandbox Isolation)
 // ----------------------------------------------------
 const handleGenerateApp = async (req: Request, res: Response) => {
   const startTime = Date.now();
@@ -815,37 +839,57 @@ const handleGenerateApp = async (req: Request, res: Response) => {
     const { prompt, vibe } = req.body;
     logger.info("GenerateApp", `Nouvelle requête de génération d'application recibue - Prompt: "${(prompt || '').slice(0, 60)}" (Vibe: ${vibe || 'défaut'})`);
 
-    const systemInstruction = `Tu es le moteur d'intelligence artificielle de VibeCode Studio (style Lovable.dev).
-Ta mission est de générer une application web complète, fonctionnelle, magnifique et prête à être exécutée dans un iframe.
-L'utilisateur est un débutant en programmation. L'application doit fonctionner à 100% de manière autonome dans un seul fichier HTML complet incluant :
-- Tailwind CSS v3 via CDN (<script src="https://cdn.tailwindcss.com"></script>)
-- Lucide Icons via CDN (<script src="https://unpkg.com/lucide@latest"></script> puis appel à lucide.createIcons())
-- Font Google moderne (Inter ou Plus Jakarta Sans)
-- Tout le JavaScript nécessaire (interactivité complète, gestion d'état, LocalStorage, animations fluides, modales, filtres, calculs)
-- Pas de placeholders incomplets ! Le code doit être riche, beau et directement testable.
+    // --- PASS 1: Generate Technical Architecture Plan ---
+    const pass1Start = Date.now();
+    const sysInstructionPlan = "Tu es architecte senior. Analyse ce besoin et génère un plan technique JSON : structure des fichiers, logique JS par module, données/états, interactions, dépendances. PAS de code, juste le plan.";
+    const planPrompt = `Demande de l'utilisateur : "${prompt}". Style / Vibe : "${vibe || "Moderne et dynamique"}". Génère le plan technique d'architecture pour cette application.`;
 
-Renvoie UNIQUEMENT un objet JSON valide suivant exactement cette structure :
-{
-  "title": "Nom de l'application",
-  "description": "Courte description en français",
-  "vibe": "Style visuel appliqué",
-  "html": "<!DOCTYPE html><html>...</html>",
-  "files": [
-    { "name": "index.html", "type": "html", "content": "..." },
-    { "name": "app.js", "type": "javascript", "content": "..." },
-    { "name": "styles.css", "type": "css", "content": "..." }
-  ],
-  "components": [
-    { "name": "NomDuComposant", "description": "Ce que fait ce composant" }
-  ],
-  "suggestedPrompts": [
-    "Ajouter un mode sombre...",
-    "Ajouter un filtre de recherche...",
-    "Exporter les données en JSON..."
-  ]
-}`;
+    const { result: planResult } = await providerRegistry.executeWithRouting<string>(
+      'CODE_PLANNING',
+      async (provider) => {
+        const resp = await provider.generateText({
+          prompt: planPrompt,
+          systemInstruction: sysInstructionPlan,
+          temperature: 0.2,
+          maxTokens: 8192,
+          timeoutMs: 30000,
+        });
+        return resp.text;
+      }
+    );
+    const pass1Duration = Date.now() - pass1Start;
+    console.log(`[PASS 1] Plan generated in ${pass1Duration}ms`);
+    logger.info("GenerateApp", `[PASS 1] Plan generated in ${pass1Duration}ms`);
 
-    const userMessage = `Crée l'application web pour ce prompt : "${prompt}". Vibe sélectionnée : "${vibe || "Moderne et dynamique"}".`;
+    let planData: any = null;
+    try {
+      let cleanedPlan = (planResult || "").trim();
+      if (cleanedPlan.includes("```json")) {
+        cleanedPlan = cleanedPlan.split("```json")[1].split("```")[0].trim();
+      } else if (cleanedPlan.includes("```")) {
+        cleanedPlan = cleanedPlan.split("```")[1].split("```")[0].trim();
+      }
+      planData = JSON.parse(cleanedPlan);
+    } catch {
+      planData = { rawPlan: planResult };
+    }
+
+    // --- PASS 2: Generate Code following Approved Plan ---
+    const pass2Start = Date.now();
+    const systemInstruction = `Tu es l'architecte principal de VibeCode Studio.
+
+RÈGLES ABSOLUES :
+1. Tu as reçu un PLAN TECHNIQUE approuvé. Suis-le À LA LETTRE.
+2. Chaque bouton a un onclick tangible. Pas de placeholder.
+3. Chaque modale s'ouvre ET se ferme.
+4. Données réalistes : vrais noms, textes cohérents, pas de Lorem Ipsum.
+5. Design moderne : Tailwind CSS, ombres douces, arrondis 8-16px, typographie soignée.
+6. Responsive mobile-first.
+7. Accessibilité : aria-labels, contrastes WCAG AA.
+8. Pas de memory leaks, nettoyer les event listeners.
+9. FORMAT : JSON { files: [{name, type, content}] }`;
+
+    const userMessage = `Plan technique approuvé :\n${JSON.stringify(planData, null, 2)}\n\nGénère maintenant le code conforme à ce plan.\nDemande de l'utilisateur : "${prompt}". Vibe sélectionnée : "${vibe || "Moderne et dynamique"}".`;
 
     const { result } = await providerRegistry.executeWithRouting<string>(
       'CODE_GENERATION',
@@ -859,15 +903,64 @@ Renvoie UNIQUEMENT un objet JSON valide suivant exactement cette structure :
         return resp.text;
       }
     );
+    const pass2Duration = Date.now() - pass2Start;
+    console.log(`[PASS 2] Code generated in ${pass2Duration}ms`);
+    logger.info("GenerateApp", `[PASS 2] Code generated in ${pass2Duration}ms`);
     const text = (result || "") as string;
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      data = JSON.parse(cleaned);
+    // --- Intelligent LLM Auto-Repair ---
+    let data: any;
+    let cleanedText = text.trim();
+    if (cleanedText.includes("```json")) {
+      cleanedText = cleanedText.split("```json")[1].split("```")[0].trim();
+    } else if (cleanedText.includes("```")) {
+      cleanedText = cleanedText.split("```")[1].split("```")[0].trim();
     }
+
+    try {
+      data = JSON.parse(cleanedText);
+    } catch (parseErr: any) {
+      logger.warn("GenerateApp", `Parsing direct JSON échoué (${parseErr.message}). Tentative d'auto-réparation LLM...`);
+      try {
+        const repairPrompt = `Ce JSON est invalide. Erreur : ${parseErr.message}. Corrige-le et retourne un JSON valide avec la même structure.\n\nJSON erroné :\n${cleanedText}`;
+        const { result: repairedResult } = await providerRegistry.executeWithRouting<string>(
+          'CODE_GENERATION',
+          async (provider) => {
+            const resp = await provider.generateText({
+              prompt: repairPrompt,
+              systemInstruction: 'Tu es un réparateur JSON expert. Retourne UNIQUEMENT le JSON corrigé valide sans préambule ni balises Markdown.',
+              temperature: 0.1,
+              maxTokens: 32768,
+            });
+            return resp.text;
+          }
+        );
+        let repairedCleaned = (repairedResult || "").trim();
+        if (repairedCleaned.includes("```json")) {
+          repairedCleaned = repairedCleaned.split("```json")[1].split("```")[0].trim();
+        } else if (repairedCleaned.includes("```")) {
+          repairedCleaned = repairedCleaned.split("```")[1].split("```")[0].trim();
+        }
+        data = JSON.parse(repairedCleaned);
+      } catch (repairErr: any) {
+        logger.error("GenerateApp", `Échec auto-réparation LLM: ${repairErr.message}`);
+        throw new Error("Erreur de parsing JSON après tentative de réparation par l'IA : " + repairErr.message);
+      }
+    }
+
+    // Process files and unify iframe HTML
+    if (!Array.isArray(data.files) || data.files.length === 0) {
+      if (data.html) {
+        data.files = extractFilesFromHtml(data.html);
+      } else {
+        data.files = [{ name: 'index.html', type: 'html', content: '' }];
+      }
+    }
+
+    const entryPoint = data.entryPoint || 'index.html';
+    data.entryPoint = entryPoint;
+    data.technicalPlan = planData;
+    data.html = buildIframeHtml(data.files, entryPoint);
 
     // Sandbox & Output Validation
     const validation = hardenedSecurityShield.validateGeneratedOutput(data);
@@ -879,7 +972,7 @@ Renvoie UNIQUEMENT un objet JSON valide suivant exactement cette structure :
     }
 
     const duration = Date.now() - startTime;
-    const estimatedTokens = Math.round((text.length + prompt.length) / 4);
+    const estimatedTokens = Math.round((text.length + (prompt || '').length) / 4);
     statsTracker.recordGeneration(duration, estimatedTokens);
     rateLimiter.recordTokenUsage(clientId, estimatedTokens);
 
@@ -895,37 +988,48 @@ Renvoie UNIQUEMENT un objet JSON valide suivant exactement cette structure :
   }
 };
 
-app.post("/api/generate-app", handleGenerateApp);
-app.post("/api/generate", handleGenerateApp);
+app.post("/api/generate-app", generationRateLimiter, validateBody(generateAppSchema), optionalAuth, handleGenerateApp);
+app.post("/api/generate", generationRateLimiter, validateBody(generateAppSchema), optionalAuth, handleGenerateApp);
 
 // ----------------------------------------------------
-// Iterate/Edit Code API (Standard JSON)
+// Iterate/Edit Code API (Multi-File JSON Support)
 // ----------------------------------------------------
 const handleIterateApp = async (req: Request, res: Response) => {
   const startTime = Date.now();
   const clientId = getClientId(req);
 
   try {
-    const { currentHtml, prompt, elementTarget } = req.body;
+    const { currentHtml, files, prompt, elementTarget, targetFile } = req.body;
 
     const systemInstruction = `Tu es l'assistant de modification de code de VibeCode Studio.
-L'utilisateur veut itérer sur son application web existante.
-Tu dois renvoyer le code HTML complet modifié avec les changements demandés, en veillant à ne rien casser d'existant tout en intégrant la nouvelle fonctionnalité.
+L'utilisateur veut itérer sur son application web multi-fichiers existante.
+Tu dois renvoyer l'ensemble des fichiers du projet mis à jour avec les modifications demandées, en veillant à ne rien casser d'existant.
 
 Renvoie UNIQUEMENT un objet JSON valide avec cette structure :
 {
   "summary": "Résumé en une phrase des modifications effectuées",
-  "html": "<!DOCTYPE html><html>...</html>",
+  "entryPoint": "index.html",
+  "files": [
+    { "name": "index.html", "type": "html", "content": "..." },
+    { "name": "style.css", "type": "css", "content": "..." },
+    { "name": "app.js", "type": "javascript", "content": "..." }
+  ],
   "suggestedPrompts": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
 }`;
 
-    const userMessage = `Voici le code HTML actuel :
-\`\`\`html
-${currentHtml}
-\`\`\`
+    let contextSnippet = '';
+    if (Array.isArray(files) && files.length > 0) {
+      contextSnippet = files.map((f: any) => `--- FICHIER: ${f.name} ---\n${f.content || ''}`).join('\n\n');
+    } else if (currentHtml) {
+      contextSnippet = `--- CODE HTML ACTUEL ---\n${currentHtml}`;
+    }
+
+    const userMessage = `Voici les fichiers actuels du projet :
+${contextSnippet}
 
 Demande de modification de l'utilisateur : "${prompt}"
-${elementTarget ? `Élément ciblé spécifiquement : ${JSON.stringify(elementTarget)}` : ""}`;
+${targetFile ? `Fichier ciblé en priorité : ${targetFile}` : ''}
+${elementTarget ? `Élément ciblé spécifiquement : ${JSON.stringify(elementTarget)}` : ''}`;
 
     const { result } = await providerRegistry.executeWithRouting<string>(
       'CODE_GENERATION',
@@ -941,13 +1045,59 @@ ${elementTarget ? `Élément ciblé spécifiquement : ${JSON.stringify(elementTa
     );
     const text = (result || "") as string;
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      data = JSON.parse(cleaned);
+    let data: any;
+    let cleanedText = text.trim();
+    if (cleanedText.includes("```json")) {
+      cleanedText = cleanedText.split("```json")[1].split("```")[0].trim();
+    } else if (cleanedText.includes("```")) {
+      cleanedText = cleanedText.split("```")[1].split("```")[0].trim();
     }
+
+    try {
+      data = JSON.parse(cleanedText);
+    } catch (parseErr: any) {
+      logger.warn("IterateApp", `Parsing direct JSON échoué (${parseErr.message}). Tentative d'auto-réparation LLM...`);
+      try {
+        const repairPrompt = `Ce JSON est invalide. Erreur : ${parseErr.message}. Corrige-le et retourne un JSON valide avec la même structure.\n\nJSON erroné :\n${cleanedText}`;
+        const { result: repairedResult } = await providerRegistry.executeWithRouting<string>(
+          'CODE_GENERATION',
+          async (provider) => {
+            const resp = await provider.generateText({
+              prompt: repairPrompt,
+              systemInstruction: 'Tu es un réparateur JSON expert. Retourne UNIQUEMENT le JSON corrigé valide sans préambule ni balises Markdown.',
+              temperature: 0.1,
+              maxTokens: 32768,
+            });
+            return resp.text;
+          }
+        );
+        let repairedCleaned = (repairedResult || "").trim();
+        if (repairedCleaned.includes("```json")) {
+          repairedCleaned = repairedCleaned.split("```json")[1].split("```")[0].trim();
+        } else if (repairedCleaned.includes("```")) {
+          repairedCleaned = repairedCleaned.split("```")[1].split("```")[0].trim();
+        }
+        data = JSON.parse(repairedCleaned);
+      } catch (repairErr: any) {
+        logger.error("IterateApp", `Échec auto-réparation LLM: ${repairErr.message}`);
+        throw new Error("Erreur de parsing JSON après tentative de réparation par l'IA : " + repairErr.message);
+      }
+    }
+
+    // Process files and assemble unified iframe HTML
+    if (!Array.isArray(data.files) || data.files.length === 0) {
+      if (data.html) {
+        data.files = extractFilesFromHtml(data.html);
+      } else if (Array.isArray(files) && files.length > 0) {
+        data.files = files;
+      } else if (currentHtml) {
+        data.files = extractFilesFromHtml(currentHtml);
+      }
+    }
+
+    const entryPoint = data.entryPoint || 'index.html';
+    data.entryPoint = entryPoint;
+    data.html = buildIframeHtml(data.files, entryPoint);
 
     if (data.html) {
       data.html = sandboxService.prepareSafeIframeHtml(data.html).safeHtml;
@@ -970,8 +1120,8 @@ ${elementTarget ? `Élément ciblé spécifiquement : ${JSON.stringify(elementTa
   }
 };
 
-app.post("/api/iterate-app", handleIterateApp);
-app.post("/api/iterate", handleIterateApp);
+app.post("/api/iterate-app", generationRateLimiter, validateBody(iterateAppSchema), optionalAuth, handleIterateApp);
+app.post("/api/iterate", generationRateLimiter, validateBody(iterateAppSchema), optionalAuth, handleIterateApp);
 
 // ----------------------------------------------------
 // Real-Time Streaming SSE API (Live Step-by-Step Generation)
@@ -1028,7 +1178,7 @@ Renvoie UNIQUEMENT un objet JSON valide avec :
     sendEvent("step", { label: "💻 Écriture des composants interactifs & scripts...", status: "in-progress" });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-2.5-flash",
       contents: `Crée l'application web pour : "${prompt}". Vibe : "${vibe || "Moderne"}".`,
       config: {
         systemInstruction,
@@ -1076,7 +1226,7 @@ distributedJobQueue.registerHandler("generate_app", async (job) => {
   const ai = getGeminiClient();
   if (!ai) return { fallback: true };
   const response = await ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-2.5-flash",
     contents: `Crée l'application pour: ${prompt}`,
   });
   return { text: response.text };

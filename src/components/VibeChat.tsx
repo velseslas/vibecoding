@@ -359,7 +359,7 @@ export const VibeChat: React.FC<VibeChatProps> = ({
       )}
 
       {/* Chat Messages List */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-xs">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-sm">
         {messages.map((msg) => {
           const riskDetails = getHumanRiskExplanation(msg.impact?.riskLevel || msg.plan?.riskLevel);
 
@@ -626,7 +626,7 @@ export const VibeChat: React.FC<VibeChatProps> = ({
             }}
             placeholder="Décrivez ce que vous souhaitez créer ou modifier..."
             disabled={isGenerating}
-            className="w-full min-h-[76px] bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none py-1 px-1 resize-none leading-relaxed"
+            className="w-full min-h-[76px] bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none py-1 px-1 resize-none leading-relaxed"
           />
 
           {/* Action toolbar at bottom of input area */}

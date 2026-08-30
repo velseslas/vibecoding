@@ -29,10 +29,14 @@ import {
   Maximize2,
   Minimize2,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  LogIn,
+  LogOut,
+  Cpu
 } from 'lucide-react';
 import { DeviceMode, WorkspaceTab, VibeProject } from '../types';
 import { playSound } from '../utils/audio';
+import { useAppAuth } from './auth/ClerkAuthProvider';
 
 interface HeaderProps {
   project: VibeProject | null;
@@ -59,6 +63,8 @@ interface HeaderProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onUpdateTitle: (title: string) => void;
+  isExpertMode?: boolean;
+  onToggleExpertMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -86,7 +92,10 @@ export const Header: React.FC<HeaderProps> = ({
   isCollapsed,
   onToggleCollapse,
   onUpdateTitle,
+  isExpertMode = false,
+  onToggleExpertMode,
 }) => {
+  const { isClerkEnabled, isSignedIn, userName, userEmail, userAvatar, signOut, openSignIn } = useAppAuth();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(project?.title || 'Mon Projet');
   
@@ -404,6 +413,28 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
+        {/* Mode Expert Toggle */}
+        {onToggleExpertMode && (
+          <button
+            onClick={() => {
+              playSound('click');
+              onToggleExpertMode();
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl text-xs font-semibold transition shadow-sm ${
+              isExpertMode
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-amber-500/10'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-slate-800'
+            }`}
+            title="Activer ou désactiver le Mode Expert (Affiche le Plan Technique architectural)"
+          >
+            <Cpu className={`w-3.5 h-3.5 ${isExpertMode ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
+            <span className="hidden sm:inline">Mode Expert</span>
+            {isExpertMode && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            )}
+          </button>
+        )}
+
         {/* Dropdown Menu: "Outils" (Starters, Académie, Exporter, Quotas) */}
         <div className="relative" ref={actionsMenuRef}>
           <button
@@ -494,31 +525,80 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Déployer</span>
         </button>
 
-        {/* User Profile Avatar Dropdown (Lovable-inspired) */}
+        {/* User Profile Avatar Dropdown / Clerk Auth Button / Dev Mode */}
         <div className="relative" ref={userMenuRef}>
-          <button
-            onClick={() => {
-              playSound('click');
-              setIsUserMenuOpen((prev) => !prev);
-            }}
-            className="p-1 rounded-2xl hover:ring-2 hover:ring-violet-500/50 transition flex items-center"
-            title="Espace Utilisateur"
-          >
-            <div className="w-7 h-7 rounded-2xl bg-gradient-to-tr from-violet-500 via-indigo-500 to-pink-500 flex items-center justify-center text-[11px] font-bold text-white shadow-md shadow-violet-500/20">
-              N
+          {!isClerkEnabled ? (
+            <div className="flex items-center space-x-2">
+              <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium rounded-full flex items-center space-x-1.5 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Mode Développement</span>
+              </span>
+              <button
+                onClick={() => {
+                  playSound('click');
+                  setIsUserMenuOpen((prev) => !prev);
+                }}
+                className="p-1 rounded-2xl hover:ring-2 hover:ring-slate-700 transition flex items-center"
+                title="Paramètres de développement"
+              >
+                <div className="w-7 h-7 rounded-2xl bg-gradient-to-tr from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-[11px] font-bold text-slate-200 shadow-sm">
+                  DEV
+                </div>
+              </button>
             </div>
-          </button>
+          ) : isSignedIn ? (
+            <button
+              onClick={() => {
+                playSound('click');
+                setIsUserMenuOpen((prev) => !prev);
+              }}
+              className="p-1 rounded-2xl hover:ring-2 hover:ring-violet-500/50 transition flex items-center"
+              title="Espace Utilisateur Clerk"
+            >
+              {userAvatar ? (
+                <img
+                  src={userAvatar}
+                  alt={userName || 'User'}
+                  className="w-7 h-7 rounded-2xl object-cover shadow-md shadow-violet-500/20"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-2xl bg-gradient-to-tr from-violet-500 via-indigo-500 to-pink-500 flex items-center justify-center text-[11px] font-bold text-white shadow-md shadow-violet-500/20">
+                  {userName ? userName.charAt(0).toUpperCase() : 'U'}
+                </div>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                playSound('click');
+                openSignIn();
+              }}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 hover:text-white text-xs font-semibold rounded-2xl border border-violet-500/30 transition"
+              title="Se connecter avec Clerk"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Connexion</span>
+            </button>
+          )}
 
           {isUserMenuOpen && (
-            <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 z-50 shadow-black/60 animate-fadeIn select-none">
+            <div className="absolute top-full mt-2 right-0 w-64 bg-slate-900/95 backdrop-blur-xl rounded-2xl shadow-2xl p-2 z-50 shadow-black/60 animate-fadeIn select-none border border-slate-800">
               {/* User summary card */}
               <div className="p-3 bg-slate-950/60 rounded-xl mb-1.5 flex items-center space-x-3">
-                <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow">
-                  N
-                </div>
+                {userAvatar ? (
+                  <img
+                    src={userAvatar}
+                    alt={userName || 'User'}
+                    className="w-9 h-9 rounded-2xl object-cover shadow"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow">
+                    {userName ? userName.charAt(0).toUpperCase() : 'DEV'}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-white truncate">Nouba Creator</div>
-                  <div className="text-[11px] text-slate-400 truncate">noubaschool@gmail.com</div>
+                  <div className="text-xs font-bold text-white truncate">{userName || 'Developer'}</div>
+                  <div className="text-[11px] text-slate-400 truncate">{userEmail || (isClerkEnabled ? 'Compte Clerk actif' : 'Mode Local / Dev')}</div>
                 </div>
               </div>
 
@@ -571,21 +651,23 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Quotas & Métriques Infra</span>
               </button>
 
-              <div className="h-px bg-slate-800/80 my-1" />
+              {isClerkEnabled && (
+                <>
+                  <div className="h-px bg-slate-800/80 my-1" />
 
-              <button
-                onClick={() => {
-                  playSound('click');
-                  setIsUserMenuOpen(false);
-                  onOpenUserModal();
-                }}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl text-slate-400 hover:bg-slate-800/80 hover:text-white transition text-left"
-              >
-                <span>Plan Actuel</span>
-                <span className="px-2 py-0.5 rounded-full bg-violet-600/20 text-violet-300 font-bold text-[10px]">
-                  Pro Creator
-                </span>
-              </button>
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setIsUserMenuOpen(false);
+                      signOut();
+                    }}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2 text-xs rounded-xl text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition text-left font-medium"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                    <span>Déconnexion (Sign Out)</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

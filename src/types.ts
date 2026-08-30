@@ -137,6 +137,7 @@ export interface VibeProject {
   suggestedPrompts: string[];
   iterations: AppIteration[];
   currentVersionId?: string;
+  technicalPlan?: any;
   createdAt: number;
   updatedAt: number;
   isFavorite?: boolean;
@@ -157,6 +158,7 @@ export interface ChatMessage {
   impact?: ImpactDetails;
   quality?: QualityReport;
   visualAudit?: VisualAuditReport;
+  technicalPlan?: any;
   requiresConfirmation?: boolean;
   confirmationQuestion?: string;
   clarificationQuestion?: string;

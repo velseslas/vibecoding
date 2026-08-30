@@ -1,5 +1,6 @@
 export type ProviderTaskType =
   | 'CONVERSATION'
+  | 'CODE_PLANNING'
   | 'CODE_GENERATION'
   | 'AUTO_REPAIR'
   | 'ANALYSIS'
