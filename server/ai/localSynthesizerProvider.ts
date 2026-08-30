@@ -30,7 +30,24 @@ export class LocalSynthesizerProvider implements AIProvider {
   public async generateText(request: AIProviderRequest): Promise<AIProviderResponse> {
     const startTime = Date.now();
     const prompt = request.prompt;
-    const text = `Application locale générée pour : ${prompt}`;
+    const title = prompt.slice(0, 30);
+    const mockJson = {
+      title,
+      description: `Application locale générée pour : ${prompt}`,
+      vibe: 'Moderne',
+      html: `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title><script src="https://cdn.tailwindcss.com"></script></head><body class="p-6 bg-slate-50 text-slate-900"><div class="max-w-2xl mx-auto p-6 bg-white rounded-xl shadow border border-slate-200"><h1 class="text-xl font-bold mb-2">${title}</h1><p class="text-slate-600">Application générée pour : ${prompt}</p></div></body></html>`,
+      files: [
+        {
+          name: 'index.html',
+          type: 'html',
+          content: `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title><script src="https://cdn.tailwindcss.com"></script></head><body class="p-6 bg-slate-50 text-slate-900"><div class="max-w-2xl mx-auto p-6 bg-white rounded-xl shadow border border-slate-200"><h1 class="text-xl font-bold mb-2">${title}</h1><p class="text-slate-600">Application générée pour : ${prompt}</p></div></body></html>`,
+        },
+      ],
+      components: [{ name: 'App', description: 'Application principale' }],
+      suggestedPrompts: ['Ajouter un bouton', 'Changer le thème'],
+    };
+
+    const text = JSON.stringify(mockJson);
 
     return {
       text,

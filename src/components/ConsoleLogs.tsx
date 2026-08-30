@@ -123,9 +123,9 @@ export const ConsoleLogs: React.FC<ConsoleLogsProps> = ({
               </p>
             </div>
           ) : (
-            filtered.map((log) => (
+            filtered.map((log, idx) => (
               <div
-                key={log.id}
+                key={log.id ? `${log.id}-${idx}` : `log-${idx}`}
                 className={`p-3 rounded-xl border flex items-start justify-between space-x-3 ${
                   log.type === 'error'
                     ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'

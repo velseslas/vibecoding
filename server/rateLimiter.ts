@@ -11,6 +11,7 @@ export const generationRateLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   handler: (req: Request, res: Response) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfterSeconds = resetTime
@@ -36,6 +37,7 @@ export const conversationRateLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   handler: (req: Request, res: Response) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfterSeconds = resetTime
@@ -61,6 +63,7 @@ export const apiGeneralRateLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
   handler: (req: Request, res: Response) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfterSeconds = resetTime

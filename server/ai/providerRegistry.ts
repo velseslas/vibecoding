@@ -1,7 +1,5 @@
 import { AIProvider, ProviderTaskType, ProviderConnectionTestResult } from './aiProvider';
-import { geminiProvider } from './geminiProvider';
 import { oxalphaProvider } from './oxalphaProvider';
-import { localSynthesizerProvider } from './localSynthesizerProvider';
 import { aiCircuitRegistry } from './circuitBreaker';
 import { logger } from '../logger';
 
@@ -50,7 +48,7 @@ export class ProviderRegistry {
   ]);
 
   constructor() {
-    // 1. Register OxAlpha (Default Provider / Priority 1)
+    // 1. Register OxAlpha exclusively (Priority 1)
     this.registerProvider(oxalphaProvider, {
       provider: 'oxalpha',
       model: process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash',
@@ -59,28 +57,6 @@ export class ProviderRegistry {
       timeout: 90000,
       maxTokens: 32768,
       temperature: 0.2,
-    });
-
-    // 2. Register Gemini (Fallback Provider / Priority 2)
-    this.registerProvider(geminiProvider, {
-      provider: 'gemini',
-      model: 'gemini-2.5-flash',
-      enabled: true,
-      priority: 2,
-      timeout: 90000,
-      maxTokens: 8192,
-      temperature: 0.2,
-    });
-
-    // 3. Register Local Fallback Synthesizer
-    this.registerProvider(localSynthesizerProvider, {
-      provider: 'local_engine',
-      model: 'local-synthesizer-v1',
-      enabled: true,
-      priority: 99,
-      timeout: 5000,
-      maxTokens: 4096,
-      temperature: 0.1,
     });
   }
 
@@ -138,52 +114,18 @@ export class ProviderRegistry {
   }
 
   public getProvidersForTask(taskType?: ProviderTaskType): AIProvider[] {
-    const candidates = this.getCandidateProviders(taskType);
-    return [candidates.primary, candidates.fallback];
+    return [oxalphaProvider];
   }
 
   /**
-   * Selects primary and secondary providers based on availability, priority, circuit breaker state, and task
+   * Selects primary provider (OxAlpha)
    */
   public getCandidateProviders(taskType?: ProviderTaskType, preferredId?: string): { primary: AIProvider; fallback: AIProvider } {
-    const allProviders = Array.from(this.providers.values());
-
-    // If explicit preference requested and valid
-    if (preferredId && this.providers.has(preferredId)) {
-      const pref = this.providers.get(preferredId)!;
-      const prefCfg = this.configs.get(preferredId);
-
-      if (prefCfg?.enabled && pref.isAvailable() && aiCircuitRegistry.getBreaker(pref.id).canExecute()) {
-        const otherAvailable = allProviders.find(
-          (p) => p.id !== preferredId && this.configs.get(p.id)?.enabled && p.isAvailable() && aiCircuitRegistry.getBreaker(p.id).canExecute()
-        ) || localSynthesizerProvider;
-
-        return { primary: pref, fallback: otherAvailable };
-      }
-    }
-
-    // Sort by priority (ascending: 1 is highest priority)
-    const sorted = allProviders
-      .filter((p) => this.configs.get(p.id)?.enabled && p.isAvailable())
-      .sort((a, b) => {
-        const cfgA = this.configs.get(a.id)?.priority ?? 100;
-        const cfgB = this.configs.get(b.id)?.priority ?? 100;
-        return cfgA - cfgB;
-      });
-
-    // Check circuit breaker status
-    const healthyCandidates = sorted.filter((p) => aiCircuitRegistry.getBreaker(p.id).canExecute());
-
-    const primary = healthyCandidates[0] || sorted[0] || localSynthesizerProvider;
-    const fallback = healthyCandidates.find((p) => p.id !== primary.id) ||
-      sorted.find((p) => p.id !== primary.id) ||
-      localSynthesizerProvider;
-
-    return { primary, fallback };
+    return { primary: oxalphaProvider, fallback: oxalphaProvider };
   }
 
   /**
-   * Executes AI task through centralized circuit breaker with automated fallback
+   * Executes AI task directly with OxAlpha. If OxAlpha fails, throws immediately with no fallback.
    */
   public async executeWithRouting<T>(
     taskType: ProviderTaskType,
@@ -191,51 +133,33 @@ export class ProviderRegistry {
     options?: { preferredProviderId?: string; estimatedTokens?: number }
   ): Promise<{ result: T; usedProvider: string; fellBack: boolean; durationMs: number }> {
     const start = Date.now();
-    const { primary, fallback } = this.getCandidateProviders(taskType, options?.preferredProviderId);
-    const primaryCfg = this.configs.get(primary.id)!;
-    const fallbackCfg = this.configs.get(fallback.id)!;
+    const primary = oxalphaProvider;
+    const primaryCfg = this.configs.get('oxalpha') || {
+      provider: 'oxalpha',
+      model: process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash',
+      enabled: true,
+      priority: 1,
+      timeout: 90000,
+      maxTokens: 32768,
+      temperature: 0.2,
+    };
 
-    logger.info('ProviderRegistry', `Génération démarrée via [${primary.id}] (Modèle: ${primaryCfg.model})`);
+    logger.info('ProviderRegistry', `Génération démarrée via [oxalpha] (Modèle: ${primaryCfg.model})`);
 
     try {
-      const res = await aiCircuitRegistry.executeWithFallback(
-        primary.id,
-        () => fn(primary, primaryCfg),
-        fallback.id,
-        () => fn(fallback, fallbackCfg),
-        { estimatedTokens: options?.estimatedTokens }
-      );
-
+      const result = await fn(primary, primaryCfg);
       const durationMs = Date.now() - start;
-      logger.info('ProviderRegistry', `Génération réussie via [${res.usedProvider}] en ${durationMs}ms${res.fellBack ? ' (fallback utilisé)' : ''}`);
-
-      return {
-        result: res.result,
-        usedProvider: res.usedProvider,
-        fellBack: res.fellBack,
-        durationMs,
-      };
-    } catch (err: any) {
-      logger.warn('ProviderRegistry', `Primary [${primary.id}] & fallback [${fallback.id}] failed: ${err.message}. Routing to local engine safety net.`);
-      const localProvider = localSynthesizerProvider;
-      const localCfg = this.configs.get(localProvider.id) || {
-        provider: localProvider.id,
-        model: 'local-synthesizer-v1',
-        enabled: true,
-        priority: 99,
-        timeout: 5000,
-        maxTokens: 4096,
-        temperature: 0.1,
-      };
-
-      const result = await fn(localProvider, localCfg);
+      logger.info('ProviderRegistry', `Génération réussie via [oxalpha] en ${durationMs}ms`);
 
       return {
         result,
-        usedProvider: localProvider.id,
-        fellBack: true,
-        durationMs: Date.now() - start,
+        usedProvider: 'oxalpha',
+        fellBack: false,
+        durationMs,
       };
+    } catch (err: any) {
+      logger.error('ProviderRegistry', `OxAlpha generation failed: ${err.message}`);
+      throw new Error(`Le provider OxAlpha est indisponible ou a échoué: ${err.message}`);
     }
   }
 

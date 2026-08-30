@@ -27,9 +27,9 @@ export class GeminiProvider implements AIProvider {
   public getMetadata(): ProviderMetadata {
     return {
       id: this.id,
-      name: this.name,
+      name: 'Google Gemini',
       type: 'cloud',
-      models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+      models: ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview'],
       defaultModel: this.defaultModel,
       isAvailable: this.isAvailable(),
       costPer1kInputTokens: 0.00015,
@@ -49,7 +49,7 @@ export class GeminiProvider implements AIProvider {
     action: (modelName: string) => Promise<T>
   ): Promise<{ result: T; usedModel: string }> {
     const primaryModel = requestedModel || this.defaultModel;
-    const fallbackModels = ['gemini-2.5-flash', 'gemini-2.5-pro'].filter((m) => m !== primaryModel);
+    const fallbackModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview'].filter((m) => m !== primaryModel);
     const candidateModels = [primaryModel, ...fallbackModels];
 
     let lastError: any = null;

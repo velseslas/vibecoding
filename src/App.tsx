@@ -161,6 +161,73 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
     localStorage.setItem('vibecode_active_project', JSON.stringify(project));
   }, [project]);
 
+  // Connect to SSE backend logs stream
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: any = null;
+    let isUnmounted = false;
+
+    const connectLogsStream = () => {
+      if (isUnmounted) return;
+      try {
+        eventSource = new EventSource('/api/logs/stream');
+
+        eventSource.onmessage = (event) => {
+          if (!event.data || event.data.trim() === ': ping') return;
+          try {
+            const log = JSON.parse(event.data);
+            if (log && log.message) {
+              const formattedType: 'log' | 'warn' | 'error' =
+                log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'log';
+
+              const newLogItem: ConsoleLogItem = {
+                id: log.id || 'log-' + Date.now() + '-' + Math.random(),
+                type: formattedType,
+                message: log.module ? `[${log.module}] ${log.message}` : log.message,
+                timestamp: log.timestamp ? new Date(log.timestamp).getTime() : Date.now(),
+              };
+
+              setLogs((prev) => {
+                if (prev.some((item) => item.id === newLogItem.id)) {
+                  return prev;
+                }
+                return [newLogItem, ...prev.slice(0, 150)];
+              });
+            }
+          } catch {
+            // Non-JSON message, ignore
+          }
+        };
+
+        eventSource.onerror = () => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          if (!isUnmounted) {
+            reconnectTimeout = setTimeout(connectLogsStream, 3000);
+          }
+        };
+      } catch (err) {
+        if (!isUnmounted) {
+          reconnectTimeout = setTimeout(connectLogsStream, 3000);
+        }
+      }
+    };
+
+    connectLogsStream();
+
+    return () => {
+      isUnmounted = true;
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+    };
+  }, []);
+
   // Log catcher from iframe
   const handleCatchLog = useCallback((type: 'log' | 'warn' | 'error', message: string) => {
     setLogs((prev) => [
@@ -374,47 +441,17 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
         )
       );
     } catch (err: any) {
-      console.warn('API error, executing client fallback:', err);
-      const fallback = applyClientModification(project.html, text, elementTarget);
-      const newFiles = extractFilesFromHtml(fallback.html);
-      const newComponents = extractComponentsFromHtml(fallback.html);
-      const versionNumber = project.iterations.length + 1;
-
-      const newIteration: AppIteration = {
-        id: 'iter-' + Date.now(),
-        timestamp: Date.now(),
-        prompt: text,
-        summary: fallback.summary,
-        html: fallback.html,
-        files: newFiles,
-        versionNumber,
-        elementTarget,
-      };
-
-      const updatedProject: VibeProject = {
-        ...project,
-        html: fallback.html,
-        files: newFiles,
-        components: newComponents,
-        iterations: [...project.iterations, newIteration],
-        updatedAt: Date.now(),
-      };
-
-      recordHistory(updatedProject);
-      playSound('success');
-
+      console.error('API error:', err);
+      playSound('error');
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? {
                 ...m,
-                text: `✨ **${fallback.summary}**\n\nVotre application a été mise à jour dans l'aperçu !`,
-                compassState: 'COMPLETED',
-                suggestedPrompts: fallback.suggestedPrompts,
+                text: `❌ La modification a échoué : ${err.message || 'Erreur inconnue'}`,
+                compassState: 'ERROR',
                 steps: [
-                  { label: "Analyse de l'intention", status: 'completed' },
-                  { label: 'Synthèse du code et du design', status: 'completed' },
-                  { label: 'Validation du bac à sable', status: 'completed' },
+                  { label: "Analyse de l'intention", status: 'failed' },
                 ],
               }
             : m
@@ -432,18 +469,6 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
     playSound('magic');
     setCurrentCompassState('EXECUTING');
 
-    let newHtml = '';
-    let title = prompt.length > 25 ? prompt.slice(0, 24) + '...' : prompt;
-    let description = prompt;
-    let files: CodeFile[] = [];
-    let components: { name: string; description: string }[] = [];
-    let technicalPlan: any = null;
-    let suggestedPrompts = [
-      'Ajouter un mode sombre',
-      'Ajouter des confettis au clic',
-      'Sauvegarder dans LocalStorage',
-    ];
-
     try {
       const response = await fetch('/api/generate-app', {
         method: 'POST',
@@ -451,70 +476,81 @@ Votre projet "${initialTemplate.title}" est actif et prêt.
         body: JSON.stringify({ prompt, vibe }),
       });
       const data = await response.json();
-      if (data.success && data.html) {
-        newHtml = data.html;
-        title = data.title || title;
-        description = data.description || description;
-        files = data.files || extractFilesFromHtml(newHtml);
-        components = data.components || extractComponentsFromHtml(newHtml);
-        technicalPlan = data.technicalPlan || null;
-        if (data.suggestedPrompts) suggestedPrompts = data.suggestedPrompts;
-      } else {
-        throw new Error('Fallback to local generator');
+      if (!data.success || !data.html) {
+        throw new Error(data.error || 'La génération a échoué');
       }
-    } catch {
-      const local = generateLocalFallbackApp(prompt, vibe);
-      newHtml = local.html;
-      title = local.title;
-      description = local.description;
-      files = local.files;
-      components = local.components;
-      suggestedPrompts = local.suggestedPrompts;
-    }
 
-    const newProject: VibeProject = {
-      id: 'proj-' + Date.now(),
-      title,
-      description,
-      vibe,
-      html: newHtml,
-      files,
-      components,
-      suggestedPrompts,
-      technicalPlan,
-      iterations: [
-        {
-          id: 'iter-0',
-          timestamp: Date.now(),
-          prompt,
-          summary: 'Création initiale du projet',
-          html: newHtml,
-          files,
-          versionNumber: 1,
-        }
-      ],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+      const newHtml = data.html;
+      const title = data.title || (prompt.length > 25 ? prompt.slice(0, 24) + '...' : prompt);
+      const description = data.description || prompt;
+      const files = data.files || extractFilesFromHtml(newHtml);
+      const components = data.components || extractComponentsFromHtml(newHtml);
+      const technicalPlan = data.technicalPlan || null;
+      const suggestedPrompts = data.suggestedPrompts || [
+        'Ajouter un mode sombre',
+        'Ajouter des confettis au clic',
+        'Sauvegarder dans LocalStorage',
+      ];
 
-    setUndoStack([]);
-    setRedoStack([]);
-    setProject(newProject);
-    setIsGenerating(false);
-    setCurrentCompassState('IDLE');
-    playSound('deploy');
-
-    setMessages([
-      {
-        id: 'msg-init-' + Date.now(),
-        sender: 'ai',
-        text: `🚀 Projet "${title}" créé avec succès !
-Votre application est prête dans l'aperçu. Dites-moi ce que vous souhaitez y ajouter ou améliorer.`,
-        timestamp: Date.now(),
-        compassState: 'COMPLETED',
+      const newProject: VibeProject = {
+        id: 'proj-' + Date.now(),
+        title,
+        description,
+        vibe,
+        html: newHtml,
+        files,
+        components,
         suggestedPrompts,
-      }
-    ]);
+        technicalPlan,
+        iterations: [
+          {
+            id: 'iter-0',
+            timestamp: Date.now(),
+            prompt,
+            summary: 'Création initiale du projet',
+            html: newHtml,
+            files,
+            versionNumber: 1,
+          }
+        ],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      setUndoStack([]);
+      setRedoStack([]);
+      setProject(newProject);
+      setIsGenerating(false);
+      setCurrentCompassState('IDLE');
+      playSound('deploy');
+
+      setMessages([
+        {
+          id: 'msg-init-' + Date.now(),
+          sender: 'ai',
+          text: `🚀 Projet "${title}" créé avec succès !
+Votre application est prête dans l'aperçu. Dites-moi ce que vous souhaitez y ajouter ou améliorer.`,
+          timestamp: Date.now(),
+          compassState: 'COMPLETED',
+          suggestedPrompts,
+        }
+      ]);
+    } catch (err: any) {
+      console.error('Generation error:', err);
+      playSound('error');
+      setIsGenerating(false);
+      setCurrentCompassState('IDLE');
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: 'msg-err-' + Date.now(),
+          sender: 'ai',
+          text: '❌ La génération a échoué : ' + (err.message || 'Erreur inconnue'),
+          timestamp: Date.now(),
+          compassState: 'ERROR',
+        }
+      ]);
+    }
   };
 
   // Load a starter template

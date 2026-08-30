@@ -91,6 +91,9 @@ export const RealtimeLogsConsole: React.FC<RealtimeLogsConsoleProps> = ({
               };
 
               setLogs((prev) => {
+                if (prev.some((item) => item.id === newLogItem.id)) {
+                  return prev;
+                }
                 const updated = [...prev, newLogItem];
                 return updated.slice(-500); // Retain max 500 logs in memory
               });
@@ -381,13 +384,13 @@ export const RealtimeLogsConsole: React.FC<RealtimeLogsConsoleProps> = ({
             </p>
           </div>
         ) : (
-          filteredLogs.map((log) => {
+          filteredLogs.map((log, idx) => {
             const timeStr = formatTime(log.timestamp);
             const levelUpper = log.level.toUpperCase();
 
             return (
               <div 
-                key={log.id} 
+                key={log.id ? `${log.id}-${idx}` : `log-${idx}`} 
                 className="group flex items-start space-x-2 hover:bg-slate-900/60 px-1.5 py-0.5 rounded transition break-all leading-normal"
               >
                 {/* Time [HH:MM:SS] */}

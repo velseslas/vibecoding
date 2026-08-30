@@ -21,6 +21,22 @@ export interface FallbackAuditRecord {
   durationMs: number;
 }
 
+export function isAuthenticationError(err: any): boolean {
+  if (!err) return false;
+  if (err.isAuthError) return true;
+  if (err.statusCode === 401 || err.statusCode === 403) return true;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    msg.includes('http 401') ||
+    msg.includes('http 403') ||
+    msg.includes('missing authentication header') ||
+    msg.includes('oxalpha_api_key manquante') ||
+    msg.includes('authentication failed') ||
+    msg.includes('invalid api key') ||
+    msg.includes('unauthorized')
+  );
+}
+
 export class ProviderCircuitBreaker {
   public readonly providerName: string;
   private state: CircuitState = 'CLOSED';
@@ -96,6 +112,11 @@ export class ProviderCircuitBreaker {
   }
 
   private onFailure(err: Error) {
+    if (isAuthenticationError(err)) {
+      logger.error('CircuitBreaker', `Provider [${this.providerName}] authentication error (401/Auth): ${err.message}. Not incrementing circuit failure count.`);
+      return;
+    }
+
     this.totalFailures++;
     this.lastFailureTime = Date.now();
     this.failureCount++;
@@ -178,7 +199,11 @@ export class AICircuitBreakerRegistry {
         const result = await breaker.execute(primaryFn);
         return { result, usedProvider: primaryProvider, fellBack: false };
       } catch (err: any) {
-        logger.warn('CircuitBreaker', `Primary provider [${primaryProvider}] execution failed. Triggering controlled fallback to [${fallbackProvider}].`, { error: err.message });
+        if (isAuthenticationError(err)) {
+          logger.error('CircuitBreaker', `[CRITICAL AUTH ERROR] Erreur d'authentification pour [${primaryProvider}]: ${err.message}. Activation du fallback de secours [${fallbackProvider}].`);
+        } else {
+          logger.warn('CircuitBreaker', `Primary provider [${primaryProvider}] execution failed. Triggering controlled fallback to [${fallbackProvider}].`, { error: err.message });
+        }
       }
     } else {
       logger.warn('CircuitBreaker', `Primary provider [${primaryProvider}] circuit is OPEN. Directly routing to fallback [${fallbackProvider}].`);

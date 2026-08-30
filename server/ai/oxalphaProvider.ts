@@ -19,6 +19,8 @@ export class OxAlphaProvider implements AIProvider {
   private timeoutMs: number;
   private costPer1kInputTokens: number;
   private costPer1kOutputTokens: number;
+  private lastInvalidKey: string | null = null;
+  private lastAuthErrorTime: number = 0;
 
   constructor(config?: OxAlphaConfig) {
     this.defaultModel = config?.defaultModel || process.env.OXALPHA_MODEL || 'z-ai/glm-5.3-flash';
@@ -29,16 +31,45 @@ export class OxAlphaProvider implements AIProvider {
   }
 
   private getApiKey(): string | null {
-    const key = process.env.OXALPHA_API_KEY || process.env.OPENROUTER_API_KEY;
-    if (!key || key === 'MY_OXALPHA_API_KEY' || key === 'MY_OPENROUTER_API_KEY' || key.trim() === '' || key.startsWith('your_') || key.includes('EXAMPLE')) {
+    let key = (process.env.OXALPHA_API_KEY || process.env.OPENROUTER_API_KEY || '').trim();
+    console.log('[OxAlpha] Reading key from env:', key ? 'FOUND (' + key.length + ' chars)' : 'NOT FOUND');
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+      key = key.substring(1, key.length - 1).trim();
+    }
+    if (key.startsWith('Bearer ')) {
+      key = key.slice(7).trim();
+    }
+    if (
+      !key ||
+      key === 'undefined' ||
+      key === 'null' ||
+      key === 'MY_OXALPHA_API_KEY' ||
+      key === 'MY_OPENROUTER_API_KEY' ||
+      key.startsWith('your_') ||
+      key.includes('EXAMPLE') ||
+      key.length < 10
+    ) {
       return null;
     }
-    return key.trim();
+    return key;
   }
 
   public isAvailable(): boolean {
     const key = this.getApiKey();
-    return !!key && key.length > 0;
+    if (!key || key.length < 10) return false;
+    // If this specific key was confirmed invalid by a 401, don't attempt it for 30 seconds or until changed
+    if (this.lastInvalidKey === key && Date.now() - this.lastAuthErrorTime < 30000) {
+      return false;
+    }
+    return true;
+  }
+
+  public recordAuthFailure(failedKey?: string) {
+    const key = failedKey || this.getApiKey();
+    if (key) {
+      this.lastInvalidKey = key;
+      this.lastAuthErrorTime = Date.now();
+    }
   }
 
   public getMetadata(): ProviderMetadata {
@@ -62,10 +93,10 @@ export class OxAlphaProvider implements AIProvider {
   }
 
   private getHeaders(apiKey: string): Record<string, string> {
+    const cleanKey = (apiKey || '').trim().replace(/^Bearer\s+/i, '');
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'X-Client-Agent': 'VibeCode-OxAlphaProvider/2.0',
+      'Authorization': `Bearer ${cleanKey}`,
       'HTTP-Referer': 'https://vibecode.studio',
       'X-Title': 'VibeCode Studio',
     };
@@ -78,7 +109,11 @@ export class OxAlphaProvider implements AIProvider {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      throw new Error('OXALPHA_API_KEY is not configured or unavailable in server environment.');
+      const authErr = new Error('ERROR: OXALPHA_API_KEY manquante ou non configurée dans .env');
+      (authErr as any).isAuthError = true;
+      (authErr as any).statusCode = 401;
+      logger.error('OxAlphaProvider', authErr.message);
+      throw authErr;
     }
 
     const model = request.metadata?.model || this.defaultModel;
@@ -101,6 +136,8 @@ export class OxAlphaProvider implements AIProvider {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    console.log('[DEBUG] Sending request to', this.baseUrl, 'with key length:', apiKey?.length);
+
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -113,6 +150,14 @@ export class OxAlphaProvider implements AIProvider {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
+        if (response.status === 401 || response.status === 403) {
+          this.recordAuthFailure(apiKey);
+          const authErr = new Error(`OxAlpha Authentication Failed (HTTP ${response.status}): ${errorText.substring(0, 200)} - Vérifiez votre OXALPHA_API_KEY dans .env`);
+          (authErr as any).isAuthError = true;
+          (authErr as any).statusCode = response.status;
+          logger.error('OxAlphaProvider', `[CRITICAL AUTH ERROR] Clé API OxAlpha invalide ou manquante (HTTP ${response.status}): ${errorText}`);
+          throw authErr;
+        }
         throw new Error(`OxAlpha API returned HTTP ${response.status}: ${errorText.substring(0, 200)}`);
       }
 
@@ -150,7 +195,11 @@ export class OxAlphaProvider implements AIProvider {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      throw new Error('OXALPHA_API_KEY is not configured or unavailable in server environment.');
+      const authErr = new Error('ERROR: OXALPHA_API_KEY manquante ou non configurée dans .env');
+      (authErr as any).isAuthError = true;
+      (authErr as any).statusCode = 401;
+      logger.error('OxAlphaProvider', authErr.message);
+      throw authErr;
     }
 
     const model = request.metadata?.model || this.defaultModel;
@@ -174,6 +223,8 @@ export class OxAlphaProvider implements AIProvider {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    console.log('[DEBUG] Sending request to', this.baseUrl, 'with key length:', apiKey?.length);
+
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -186,6 +237,14 @@ export class OxAlphaProvider implements AIProvider {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
+        if (response.status === 401 || response.status === 403) {
+          this.recordAuthFailure(apiKey);
+          const authErr = new Error(`OxAlpha Authentication Failed (HTTP ${response.status}): ${errorText.substring(0, 200)} - Vérifiez votre OXALPHA_API_KEY dans .env`);
+          (authErr as any).isAuthError = true;
+          (authErr as any).statusCode = response.status;
+          logger.error('OxAlphaProvider', `[CRITICAL AUTH ERROR] Clé API OxAlpha invalide ou manquante (HTTP ${response.status}): ${errorText}`);
+          throw authErr;
+        }
         throw new Error(`OxAlpha API returned HTTP ${response.status}: ${errorText.substring(0, 200)}`);
       }
 
@@ -238,7 +297,11 @@ export class OxAlphaProvider implements AIProvider {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      throw new Error('OXALPHA_API_KEY is not configured or unavailable.');
+      const authErr = new Error('ERROR: OXALPHA_API_KEY manquante ou non configurée dans .env');
+      (authErr as any).isAuthError = true;
+      (authErr as any).statusCode = 401;
+      logger.error('OxAlphaProvider', authErr.message);
+      throw authErr;
     }
 
     const model = request.metadata?.model || this.defaultModel;
@@ -260,6 +323,8 @@ export class OxAlphaProvider implements AIProvider {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), request.timeoutMs || this.timeoutMs);
 
+    console.log('[DEBUG] Sending request to', this.baseUrl, 'with key length:', apiKey?.length);
+
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -272,6 +337,13 @@ export class OxAlphaProvider implements AIProvider {
 
       if (!response.ok || !response.body) {
         const errorText = await response.text().catch(() => '');
+        if (response.status === 401 || response.status === 403) {
+          this.recordAuthFailure(apiKey);
+          const authErr = new Error(`OxAlpha Stream Authentication Failed (HTTP ${response.status}): ${errorText.substring(0, 200)}`);
+          (authErr as any).isAuthError = true;
+          (authErr as any).statusCode = response.status;
+          throw authErr;
+        }
         throw new Error(`OxAlpha Stream returned HTTP ${response.status}: ${errorText.substring(0, 200)}`);
       }
 
@@ -354,6 +426,8 @@ export class OxAlphaProvider implements AIProvider {
     const controller = new AbortController();
     const timeoutMs = 10000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    console.log('[DEBUG] Sending request to', this.baseUrl, 'with key length:', apiKey?.length);
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -462,7 +536,14 @@ export class OxAlphaProvider implements AIProvider {
   }
 
   public sanitizeError(err: any): Error {
-    return new Error(this.sanitizeMessage(err?.message || 'OxAlpha execution error'));
+    const error = new Error(this.sanitizeMessage(err?.message || 'OxAlpha execution error'));
+    if (err?.isAuthError) {
+      (error as any).isAuthError = true;
+    }
+    if (err?.statusCode) {
+      (error as any).statusCode = err.statusCode;
+    }
+    return error;
   }
 }
 

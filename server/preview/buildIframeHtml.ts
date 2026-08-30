@@ -100,9 +100,9 @@ export function buildIframeHtml(
       f.name !== mainHtmlFile!.name
   );
 
-  // Replace <script src="..."></script> tags with inline script content
+  // Replace <script src="..."></script> tags with inline script type="module" content
   html = html.replace(
-    /<script\s+[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/gi,
+    /<script(?:\s+[^>]*)?\s+src=["']([^"']+)["'](?:\s+[^>]*)?>\s*<\/script>/gi,
     (match, src) => {
       if (!src) return match;
       const trimmedSrc = src.trim();
@@ -123,7 +123,7 @@ export function buildIframeHtml(
       );
       if (matchedJs) {
         inlinedFiles.add(matchedJs.name);
-        return `<script data-file="${matchedJs.name}">\n${matchedJs.content}\n</script>`;
+        return `<script type="module" data-file="${matchedJs.name}">\n${matchedJs.content}\n</script>`;
       }
       return match;
     }
@@ -142,7 +142,7 @@ export function buildIframeHtml(
     }
   }
 
-  // 5. Inject remaining JS files in dependency order (components/modules first, app.js last)
+  // 5. Inject remaining JS files in dependency order (components/modules first, app.js last) as ES6 modules
   const remainingJs = jsFiles.filter((f) => !inlinedFiles.has(f.name));
   if (remainingJs.length > 0) {
     const sortedJs = [...remainingJs].sort((a, b) => {
@@ -160,7 +160,7 @@ export function buildIframeHtml(
     });
 
     const extraJs = sortedJs
-      .map((f) => `<script data-file="${f.name}">\n${f.content}\n</script>`)
+      .map((f) => `<script type="module" data-file="${f.name}">\n${f.content}\n</script>`)
       .join('\n');
 
     if (html.includes('</body>')) {
@@ -196,7 +196,7 @@ export function buildIframeHtml(
     !html.includes('lucide.createIcons()') &&
     !html.includes('lucide.createIcons')
   ) {
-    const lucideInit = `\n<script>\n  if (window.lucide && typeof window.lucide.createIcons === 'function') {\n    window.lucide.createIcons();\n  }\n  document.addEventListener('DOMContentLoaded', () => {\n    if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();\n  });\n</script>`;
+    const lucideInit = `\n<script type="module">\n  const initLucide = () => {\n    if (window.lucide && typeof window.lucide.createIcons === 'function') {\n      window.lucide.createIcons();\n    }\n  };\n  if (document.readyState === 'loading') {\n    document.addEventListener('DOMContentLoaded', initLucide);\n  } else {\n    initLucide();\n  }\n  window.addEventListener('load', initLucide);\n</script>`;
     if (html.includes('</body>')) {
       html = html.replace('</body>', `${lucideInit}\n</body>`);
     } else {

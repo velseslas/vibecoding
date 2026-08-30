@@ -1,8 +1,16 @@
+import 'dotenv/config';
 import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import dotenv from "dotenv";
+
+console.log('[ENV CHECK] OXALPHA_API_KEY exists:', !!process.env.OXALPHA_API_KEY);
+console.log('[ENV CHECK] OXALPHA_API_KEY length:', process.env.OXALPHA_API_KEY?.length || 0);
+console.log('[ENV CHECK] OXALPHA_API_KEY first 10 chars:', process.env.OXALPHA_API_KEY?.substring(0, 10) || 'NONE');
+
+if (!process.env.OXALPHA_API_KEY) {
+  console.error("ERROR: OXALPHA_API_KEY manquante dans .env");
+}
 
 import { config } from "./server/config";
 import { logger } from "./server/logger";
@@ -47,12 +55,11 @@ import { securityShield } from "./server/securityShield";
 import helmet from "helmet";
 import cors from "cors";
 
-dotenv.config();
-
 const CLERK_ENABLED = process.env.CLERK_ENABLED === "true";
 logger.info("Auth", `Clerk Auth Status: ${CLERK_ENABLED ? "ENABLED (Production mode)" : "DISABLED (Development mode - single dev user)"}`);
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = 3000;
 
 // 1. Security Headers with Helmet
@@ -1142,70 +1149,165 @@ app.post("/api/stream-generate", async (req: Request, res: Response) => {
 
   try {
     const { prompt, vibe } = req.body;
-    const ai = getGeminiClient();
 
-    sendEvent("step", { label: "🧠 Analyse architecturale du prompt...", status: "in-progress" });
+    // --- PASS 1: Generate Technical Architecture Plan ---
+    sendEvent("step", { label: "🧠 Analyse architecturale du prompt & Plan technique (Passe 1)...", status: "in-progress" });
 
-    if (!ai) {
-      sendEvent("step", { label: "⚡ Basculement sur le moteur local haute vitesse...", status: "completed" });
-      sendEvent("fallback", { message: "Moteur local prêt" });
-      res.end();
-      statsTracker.decrementStream();
-      return;
-    }
+    const sysInstructionPlan = "Tu es architecte senior. Analyse ce besoin et génère un plan technique JSON : structure des fichiers, logique JS par module, données/états, interactions, dépendances. PAS de code, juste le plan.";
+    const planPrompt = `Demande de l'utilisateur : "${prompt}". Style / Vibe : "${vibe || "Moderne et dynamique"}". Génère le plan technique d'architecture pour cette application.`;
 
-    sendEvent("step", { label: "🎨 Génération de la palette et du Design System...", status: "in-progress" });
-    
-    const systemInstruction = `Tu es le moteur d'intelligence artificielle de VibeCode Studio.
-Génère une application web complète, propre et autonome dans un seul fichier HTML complet avec Tailwind CSS, Lucide Icons, et JavaScript fonctionnel.
-Renvoie UNIQUEMENT un objet JSON valide avec :
-{
-  "title": "Nom de l'application",
-  "description": "Courte description",
-  "vibe": "Style visuel",
-  "html": "<!DOCTYPE html><html>...</html>",
-  "files": [
-    { "name": "index.html", "type": "html", "content": "..." },
-    { "name": "app.js", "type": "javascript", "content": "..." },
-    { "name": "styles.css", "type": "css", "content": "..." }
-  ],
-  "components": [
-    { "name": "NomDuComposant", "description": "Ce que fait ce composant" }
-  ],
-  "suggestedPrompts": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
-}`;
+    const { result: planResult } = await providerRegistry.executeWithRouting<string>(
+      'CODE_PLANNING',
+      async (provider) => {
+        const resp = await provider.generateText({
+          prompt: planPrompt,
+          systemInstruction: sysInstructionPlan,
+          temperature: 0.2,
+          maxTokens: 8192,
+          timeoutMs: 30000,
+        });
+        return resp.text;
+      }
+    );
 
-    sendEvent("step", { label: "💻 Écriture des composants interactifs & scripts...", status: "in-progress" });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Crée l'application web pour : "${prompt}". Vibe : "${vibe || "Moderne"}".`,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-      },
-    });
-
-    sendEvent("step", { label: "🚀 Assemblage et compilation de l'aperçu...", status: "completed" });
-
-    const text = response.text?.trim() || "";
-    let data;
+    let planData: any = null;
     try {
-      data = JSON.parse(text);
+      let cleanedPlan = (planResult || "").trim();
+      if (cleanedPlan.includes("```json")) {
+        cleanedPlan = cleanedPlan.split("```json")[1].split("```")[0].trim();
+      } else if (cleanedPlan.includes("```")) {
+        cleanedPlan = cleanedPlan.split("```")[1].split("```")[0].trim();
+      }
+      planData = JSON.parse(cleanedPlan);
     } catch {
-      const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      data = JSON.parse(cleaned);
+      planData = { rawPlan: planResult };
     }
 
+    sendEvent("step", { label: "🧠 Plan technique validé", status: "completed" });
+    sendEvent("step", { label: "💻 Écriture & Streaming du code complet (Passe 2 - 32k tokens)...", status: "in-progress" });
+
+    // --- PASS 2: Generate Code following Approved Plan with OxAlpha / Provider Stream ---
+    const systemInstruction = `Tu es l'architecte principal de VibeCode Studio.
+
+RÈGLES ABSOLUES :
+1. Tu as reçu un PLAN TECHNIQUE approuvé. Suis-le À LA LETTRE.
+2. Chaque bouton a un onclick tangible. Pas de placeholder.
+3. Chaque modale s'ouvre ET se ferme.
+4. Données réalistes : vrais noms, textes cohérents, pas de Lorem Ipsum.
+5. Design moderne : Tailwind CSS, ombres douces, arrondis 8-16px, typographie soignée.
+6. Responsive mobile-first.
+7. Accessibilité : aria-labels, contrastes WCAG AA.
+8. Pas de memory leaks, nettoyer les event listeners.
+9. FORMAT : JSON { "title": "...", "description": "...", "vibe": "...", "entryPoint": "index.html", "files": [{ "name": "index.html", "type": "html", "content": "..." }], "components": [{ "name": "...", "description": "..." }], "suggestedPrompts": ["..."] }`;
+
+    const userMessage = `Plan technique approuvé :\n${JSON.stringify(planData, null, 2)}\n\nGénère maintenant le code complet conforme à ce plan.\nDemande de l'utilisateur : "${prompt}". Vibe sélectionnée : "${vibe || "Moderne et dynamique"}".`;
+
+    const { result } = await providerRegistry.executeWithRouting<string>(
+      'CODE_GENERATION',
+      async (provider) => {
+        let accumulated = "";
+        try {
+          if (typeof provider.streamGenerate === 'function') {
+            const resp = await provider.streamGenerate(
+              {
+                prompt: userMessage,
+                systemInstruction,
+                temperature: 0.2,
+                maxTokens: 32768,
+              },
+              (chunk: string) => {
+                accumulated += chunk;
+                sendEvent("chunk", { text: chunk });
+              }
+            );
+            return resp.text || accumulated;
+          } else {
+            const resp = await provider.generateText({
+              prompt: userMessage,
+              systemInstruction,
+              temperature: 0.2,
+              maxTokens: 32768,
+            });
+            return resp.text;
+          }
+        } catch (streamErr) {
+          // If streaming directly fails on provider, fallback to generateText
+          const resp = await provider.generateText({
+            prompt: userMessage,
+            systemInstruction,
+            temperature: 0.2,
+            maxTokens: 32768,
+          });
+          return resp.text;
+        }
+      }
+    );
+
+    sendEvent("step", { label: "🚀 Assemblage et validation de l'aperçu...", status: "in-progress" });
+
+    const text = (result || "").trim();
+    let data: any;
+    let cleanedText = text;
+    if (cleanedText.includes("```json")) {
+      cleanedText = cleanedText.split("```json")[1].split("```")[0].trim();
+    } else if (cleanedText.includes("```")) {
+      cleanedText = cleanedText.split("```")[1].split("```")[0].trim();
+    }
+
+    try {
+      data = JSON.parse(cleanedText);
+    } catch (parseErr: any) {
+      const repairPrompt = `Ce JSON est invalide. Erreur : ${parseErr.message}. Corrige-le et retourne un JSON valide avec la même structure.\n\nJSON erroné :\n${cleanedText}`;
+      const { result: repairedResult } = await providerRegistry.executeWithRouting<string>(
+        'CODE_GENERATION',
+        async (provider) => {
+          const resp = await provider.generateText({
+            prompt: repairPrompt,
+            systemInstruction: 'Tu es un réparateur JSON expert. Retourne UNIQUEMENT le JSON corrigé valide sans préambule ni balises Markdown.',
+            temperature: 0.1,
+            maxTokens: 32768,
+          });
+          return resp.text;
+        }
+      );
+      let repairedCleaned = (repairedResult || "").trim();
+      if (repairedCleaned.includes("```json")) {
+        repairedCleaned = repairedCleaned.split("```json")[1].split("```")[0].trim();
+      } else if (repairedCleaned.includes("```")) {
+        repairedCleaned = repairedCleaned.split("```")[1].split("```")[0].trim();
+      }
+      data = JSON.parse(repairedCleaned);
+    }
+
+    // Process files and unify iframe HTML
+    if (!Array.isArray(data.files) || data.files.length === 0) {
+      if (data.html) {
+        data.files = extractFilesFromHtml(data.html);
+      } else {
+        data.files = [{ name: 'index.html', type: 'html', content: '' }];
+      }
+    }
+
+    const entryPoint = data.entryPoint || 'index.html';
+    data.entryPoint = entryPoint;
+    data.technicalPlan = planData;
+    data.html = buildIframeHtml(data.files, entryPoint);
+
+    // Sandbox & Output Validation
+    const validation = hardenedSecurityShield.validateGeneratedOutput(data);
+    if (validation.sanitizedFiles.length > 0) {
+      data.files = validation.sanitizedFiles;
+    }
     if (data.html) {
       data.html = sandboxService.prepareSafeIframeHtml(data.html).safeHtml;
     }
 
     const duration = Date.now() - startTime;
-    const estimatedTokens = Math.round((text.length + prompt.length) / 4);
+    const estimatedTokens = Math.round((text.length + (prompt || '').length) / 4);
     statsTracker.recordGeneration(duration, estimatedTokens);
     rateLimiter.recordTokenUsage(clientId, estimatedTokens);
 
+    sendEvent("step", { label: "✨ Application prête !", status: "completed" });
     sendEvent("complete", { success: true, ...data, duration, tokens: estimatedTokens });
     res.end();
   } catch (error: any) {
